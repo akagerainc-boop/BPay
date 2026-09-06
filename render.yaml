@@ -1,0 +1,33 @@
+# Render Blueprint — lets Render auto-configure this service when you
+# create it via "New > Blueprint" pointing at this repo, instead of
+# clicking through every field by hand. Secrets (marked `sync: false`)
+# still have to be typed into the Render dashboard yourself — they're
+# deliberately not in this file, which is committed to the repo.
+services:
+  - type: web
+    name: bpay-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_HOURS
+        value: "12"
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        value: /etc/secrets/firebase-service-account.json
