@@ -5,9 +5,9 @@
 -- where the user's own input is substituted into it. The Flutter app
 -- holds no hardcoded carrier codes — it renders whatever is defined here.
 
-CREATE DATABASE IF NOT EXISTS bpay
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE bpay;
+-- CREATE DATABASE IF NOT EXISTS bpay
+--   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- USE bpay;
 
 -- ---------------------------------------------------------------- admins
 CREATE TABLE IF NOT EXISTS admins (
