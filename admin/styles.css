@@ -1,0 +1,249 @@
+/* BPay admin dashboard — matches the app's yellow/ink brand. */
+
+:root {
+  --yellow: #ffcc00;
+  --on-yellow: #3e2116;
+  --ink: #1f2024;
+  --ink-2: #4a4c55;
+  --muted: #8a8a92;
+  --surface: #f6f6f8;
+  --border: #e3e3e8;
+  --white: #ffffff;
+  --success: #1e8e3e;
+  --error: #d93025;
+  --warning: #e8710a;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+/* The HTML `hidden` attribute only sets display:none through the UA
+   stylesheet, so any author rule setting `display` (as .modal and
+   .login-wrap do) silently overrides it. This keeps `hidden` honest. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------- branding */
+.brand { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; }
+.brand .b { color: var(--ink); }
+.brand .pay { color: var(--yellow); }
+.brand.small { font-size: 20px; display: flex; align-items: baseline; gap: 2px; }
+.admin-tag {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.8px; margin-left: 8px;
+}
+
+/* ------------------------------------------------------------- login */
+.login-wrap {
+  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+}
+.login-card {
+  background: var(--white); padding: 32px; border-radius: 20px;
+  width: 100%; max-width: 360px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.08);
+}
+.login-sub { margin: 4px 0 24px; color: var(--muted); }
+.login-card label {
+  display: block; margin-bottom: 14px; font-weight: 600; color: var(--ink-2);
+}
+.login-card input {
+  width: 100%; margin-top: 6px; padding: 11px 12px;
+  border: 1px solid var(--border); border-radius: 10px; font-size: 14px;
+  background: var(--surface);
+}
+.login-card input:focus { outline: 2px solid var(--yellow); border-color: transparent; }
+
+/* ------------------------------------------------------------ topbar */
+.topbar {
+  display: flex; align-items: center; gap: 24px;
+  background: var(--white); padding: 12px 22px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+  flex-wrap: wrap;
+}
+.tabs {
+  display: flex; gap: 4px; flex: 1;
+  /* On a phone there isn't room for every tab at once — scroll the strip
+     itself rather than wrapping it (which would push content down every
+     time a tab name changed) or shrinking labels illegibly. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  border: 0; background: transparent; padding: 8px 14px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+  white-space: nowrap; flex: 0 0 auto;
+}
+.tab:hover { background: var(--surface); }
+.tab.active { background: var(--yellow); color: var(--on-yellow); }
+.topbar-right { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+
+main { padding: 22px; max-width: 1200px; margin: 0 auto; }
+
+/* ------------------------------------------------------------ mobile */
+@media (max-width: 720px) {
+  .topbar { padding: 10px 14px; gap: 10px; }
+  .brand.small { font-size: 17px; }
+  .admin-tag { display: none; }
+  /* The tab strip becomes its own full-width row so it has room to
+     scroll, instead of squeezing against the brand and sign-out button. */
+  .tabs { order: 3; flex-basis: 100%; }
+  main { padding: 14px; }
+  .panel-head { flex-wrap: wrap; gap: 10px; }
+  .panel-head h2 { font-size: 17px; }
+  .cards-row { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .ann-uploads { grid-template-columns: 1fr; }
+  .modal-card { padding: 18px; max-height: 85vh; }
+  .login-card { padding: 24px 20px; }
+}
+
+@media (max-width: 420px) {
+  .stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { padding: 12px; }
+  .stat .value { font-size: 21px; }
+  .btn.small { padding: 6px 9px; font-size: 11.5px; }
+}
+
+/* ------------------------------------------------------------- cards */
+.card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px;
+}
+.card.info h3 { margin: 0 0 8px; }
+.card.info p { color: var(--ink-2); line-height: 1.55; margin: 8px 0; }
+.placeholders { margin: 10px 0; padding-left: 18px; color: var(--ink-2); line-height: 1.9; }
+code {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 6px; font-size: 12.5px;
+}
+.muted { color: var(--muted); }
+.note { margin: -6px 0 14px; }
+
+.cards-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.fee-card, .key-card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.fee-card h4, .key-card h4 { margin: 0 0 12px; }
+.fee-card label, .key-card label {
+  display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  margin-bottom: 10px;
+}
+.fee-card input, .fee-card select, .key-card input {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13.5px; box-sizing: border-box;
+}
+.fee-card .checkline { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.fee-card .checkline input { width: auto; margin: 0; }
+.key-card .key-preview { font-family: monospace; color: var(--muted); margin: 0 0 10px; }
+
+.announcement-form label {
+  display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  margin-bottom: 14px;
+}
+.announcement-form input[type="text"], .announcement-form textarea {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13.5px; box-sizing: border-box; font-family: inherit;
+}
+.ann-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.ann-upload label { margin-bottom: 6px; }
+.ann-preview {
+  display: block; margin-top: 8px; max-width: 100%; max-height: 140px;
+  border-radius: 8px; border: 1px solid var(--border);
+}
+.ann-preview.small { max-height: 60px; max-width: 60px; border-radius: 50%; object-fit: cover; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.stat {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.stat .value { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+.stat .label { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* ------------------------------------------------------------ tables */
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.panel-head h2 { margin: 0; font-size: 19px; }
+.table-wrap {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow-x: auto;
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.6px; color: var(--muted); padding: 12px 14px;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fcfcfd; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+.pill {
+  display: inline-block; padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700;
+}
+.pill.on { background: #e7f4ea; color: var(--success); }
+.pill.off { background: #f1f1f3; color: var(--muted); }
+.pill.warn { background: #fdf0e4; color: var(--warning); }
+.pill.err { background: #fdeceb; color: var(--error); }
+
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ----------------------------------------------------------- buttons */
+.btn {
+  border: 0; border-radius: 10px; padding: 9px 15px; font-size: 13px;
+  font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.btn.primary { background: var(--yellow); color: var(--on-yellow); }
+.btn.primary:hover { filter: brightness(0.95); }
+.btn.ghost { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border); }
+.btn.ghost:hover { background: #eeeef1; }
+.btn.danger { background: #fdeceb; color: var(--error); }
+.btn.small { padding: 6px 11px; font-size: 12px; }
+.btn.full { width: 100%; margin-top: 6px; }
+
+/* ------------------------------------------------------------- modal */
+.modal {
+  position: fixed; inset: 0; background: rgba(20,20,25,.45);
+  display: grid; place-items: center; padding: 20px; z-index: 50;
+}
+.modal-card {
+  background: var(--white); border-radius: 18px; padding: 24px;
+  width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+}
+.modal-card h3 { margin: 0 0 16px; }
+.modal-card label { display: block; margin-bottom: 13px; font-weight: 600; color: var(--ink-2); font-size: 13px; }
+.modal-card input[type=text], .modal-card input[type=number], .modal-card select, .modal-card textarea {
+  width: 100%; margin-top: 5px; padding: 10px 11px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  font-family: inherit;
+}
+.modal-card textarea { min-height: 64px; resize: vertical; }
+.modal-card .checkline { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink-2); }
+.modal-card .checkline input { width: auto; margin: 0; }
+.field-hint { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+.error { color: var(--error); font-size: 13px; margin: 8px 0 0; }
+
+/* ------------------------------------------------------------- toast */
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--white); padding: 11px 18px;
+  border-radius: 10px; font-size: 13.5px; font-weight: 600; z-index: 100;
+}
+
+.empty { padding: 34px; text-align: center; color: var(--muted); }

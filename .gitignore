@@ -1,0 +1,20 @@
+# Secrets — never commit these. Real credentials, generated locally.
+.env
+firebase-service-account.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# User-uploaded content (announcement photos/logos) — runtime data, not code.
+uploads/*
+!uploads/.gitkeep
+
+# Editor/OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

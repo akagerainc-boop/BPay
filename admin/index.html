@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BPay Admin</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------------------ login -->
+<div id="login-view" class="login-wrap">
+  <form id="login-form" class="login-card">
+    <div class="brand"><span class="b">B</span><span class="pay">Pay</span></div>
+    <p class="login-sub">Admin dashboard</p>
+    <label>Username<input id="login-username" autocomplete="username" required></label>
+    <label>Password<input id="login-password" type="password" autocomplete="current-password" required></label>
+    <button type="submit" class="btn primary full">Sign in</button>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+</div>
+
+<!-- -------------------------------------------------------------- app -->
+<div id="app-view" hidden>
+  <header class="topbar">
+    <div class="brand small"><span class="b">B</span><span class="pay">Pay</span><span class="admin-tag">admin</span></div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="ussd">USSD codes</button>
+      <button class="tab" data-tab="services">Services</button>
+      <button class="tab" data-tab="fees">Fees &amp; API keys</button>
+      <button class="tab" data-tab="announcements">Announcements</button>
+      <button class="tab" data-tab="users">Users</button>
+      <button class="tab" data-tab="transactions">Transactions</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="who"></span>
+      <button id="logout" class="btn ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ---------------------------------------------------- overview -->
+    <section id="tab-overview" class="tab-panel">
+      <div class="stats" id="stats"></div>
+      <div class="card info">
+        <h3>How USSD templates work</h3>
+        <p>
+          Each template is the exact code BPay dials. Put a placeholder
+          where the user's own input belongs — the app substitutes it
+          before dialling.
+        </p>
+        <ul class="placeholders">
+          <li><code>{recipient}</code> phone number the user entered</li>
+          <li><code>{amount}</code> amount in RWF (digits only)</li>
+          <li><code>{code}</code> merchant / till code</li>
+          <li><code>{account}</code> meter, account or reference number</li>
+        </ul>
+        <p class="muted">
+          Example — <code>*182*1*1*{recipient}*{amount}#</code> sending 5,000
+          to 0788123456 dials <code>*182*1*1*0788123456*5000#</code>.
+        </p>
+        <p class="muted">
+          Leave a template with no placeholders (like <code>*182#</code>) to
+          simply open the carrier menu, and untick
+          <em>Completes payment</em> so the app tells the user to finish
+          there.
+        </p>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------- ussd -->
+    <section id="tab-ussd" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>USSD codes</h2>
+        <button class="btn primary" id="add-template">Add template</button>
+      </div>
+      <div class="table-wrap">
+        <table id="templates-table">
+          <thead>
+            <tr>
+              <th>SIM</th><th>Transaction</th><th>Recipient</th>
+              <th>USSD template</th><th>Completes</th><th>Active</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------- services -->
+    <section id="tab-services" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Services</h2>
+        <button class="btn primary" id="add-service">Add service</button>
+      </div>
+      <div class="table-wrap">
+        <table id="services-table">
+          <thead>
+            <tr>
+              <th>Icon</th><th>Name</th><th>MTN USSD</th><th>Airtel USSD</th>
+              <th>Account label</th><th>Networks</th><th>Order</th>
+              <th>Active</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- fees -->
+    <section id="tab-fees" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Service fee</h2>
+      </div>
+      <p class="muted note">
+        Once a network crosses this threshold, BPay asks the user to pay
+        this fee via a real Request-to-Pay (MTN MoMo / Airtel Money) before
+        continuing — see Provider API keys below for the credentials that
+        makes it an actual charge, not just a notice. Their main payment
+        still runs through whichever USSD code is set up in USSD codes /
+        Services above, unchanged by this.
+      </p>
+      <div class="cards-row" id="fee-rules"></div>
+
+      <div class="panel-head" style="margin-top:32px">
+        <h2>Provider API keys</h2>
+      </div>
+      <p class="muted note">
+        Real credentials for the MTN MoMo / Airtel Money Collections API —
+        the "Request to Pay" that actually charges the fee above from the
+        user's own wallet into this company's account. This is separate
+        from USSD dialling entirely: it's a direct server-to-server call,
+        which is why it needs real credentials from MTN/Airtel's developer
+        portal. Secrets are masked here and never sent to the app.
+      </p>
+      <div class="cards-row" id="provider-keys"></div>
+    </section>
+
+    <!-- --------------------------------------------------- announcements -->
+    <section id="tab-announcements" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Push a notification</h2>
+      </div>
+      <p id="firebase-status" class="muted note"></p>
+      <div class="card announcement-form">
+        <label>Title
+          <input type="text" id="ann-title" maxlength="160" placeholder="e.g. New: pay TV subscriptions in BPay">
+        </label>
+        <label>Message
+          <textarea id="ann-message" rows="3" placeholder="What's this about?"></textarea>
+        </label>
+        <div class="ann-uploads">
+          <div class="ann-upload">
+            <label>Photo (shown in the notification and detail page)</label>
+            <input type="file" id="ann-photo-file" accept="image/*">
+            <img id="ann-photo-preview" class="ann-preview" hidden>
+          </div>
+          <div class="ann-upload">
+            <label>Logo (small icon)</label>
+            <input type="file" id="ann-logo-file" accept="image/*">
+            <img id="ann-logo-preview" class="ann-preview small" hidden>
+          </div>
+        </div>
+        <button class="btn primary" id="ann-push">Push notification</button>
+      </div>
+
+      <div class="panel-head" style="margin-top:28px">
+        <h2>Sent</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="announcements-table">
+          <thead>
+            <tr><th>When</th><th>Title</th><th>Message</th><th>Reached</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------- users -->
+    <section id="tab-users" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Users</h2>
+        <button class="btn ghost" id="refresh-users">Refresh</button>
+      </div>
+      <p class="muted note">
+        BPay has no sign-in — this is every device that has registered for
+        push notifications or reported a real transaction, real activity
+        only. A phone number only appears once that device has actually
+        made a payment; nothing here is guessed.
+      </p>
+      <div class="table-wrap">
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Device</th><th>Phone</th><th>Network</th><th>Push</th>
+              <th>Transactions</th><th>Successful</th><th>Volume</th>
+              <th>Last active</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------ transactions -->
+    <section id="tab-transactions" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Transactions</h2>
+        <button class="btn ghost" id="refresh-tx">Refresh</button>
+      </div>
+      <p class="muted note">
+        These are client-reported records. A status here reflects what the
+        app observed on the device — it is not a provider-verified ledger.
+      </p>
+      <div class="table-wrap">
+        <table id="tx-table">
+          <thead>
+            <tr>
+              <th>When</th><th>BPay ID</th><th>Type</th><th>To</th>
+              <th>Amount</th><th>Status</th><th>Verification</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ------------------------------------------------------------ modal -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <h3 id="modal-title"></h3>
+    <form id="modal-form"></form>
+    <p id="modal-error" class="error" hidden></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modal-cancel">Cancel</button>
+      <button class="btn primary" id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
