@@ -561,7 +561,7 @@ async function loadAnnouncements() {
 
     const tbody = document.querySelector("#announcements-table tbody");
     if (!data.announcements.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty">Nothing sent yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">Nothing sent yet.</td></tr>`;
       return;
     }
     tbody.innerHTML = data.announcements.map((a) => `
@@ -570,9 +570,28 @@ async function loadAnnouncements() {
         <td><strong>${escapeHtml(a.title)}</strong></td>
         <td>${escapeHtml((a.message || "").slice(0, 80))}${(a.message || "").length > 80 ? "…" : ""}</td>
         <td>${a.sent_count}</td>
+        <td class="row-actions">
+          <button class="btn ghost small" onclick="resendAnnouncement(${a.id}, this)">Resend</button>
+        </td>
       </tr>`).join("");
   } catch (err) { toast(err.message); }
 }
+
+window.resendAnnouncement = async (id, btn) => {
+  btn.disabled = true;
+  try {
+    const result = await api(`/api/admin/announcements/${id}/resend`, { method: "POST" });
+    toast(
+      result.error
+        ? `Resend failed: ${result.error}`
+        : `Resent to ${result.sent_count} device${result.sent_count === 1 ? "" : "s"}`
+    );
+    loadAnnouncements();
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+};
 
 /* ------------------------------------------------------------- users */
 async function loadUsers() {

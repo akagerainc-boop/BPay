@@ -764,6 +764,31 @@ def create_announcement():
     return jsonify({"id": new_id, "sent_count": sent_count, "error": error}), 201
 
 
+@app.post("/api/admin/announcements/<int:aid>/resend")
+@require_admin
+def resend_announcement(aid):
+    """Pushes an already-sent announcement out again, unchanged — for a
+    notice that's still relevant (e.g. re-reaching devices that were
+    offline the first time), without re-typing it as a new one. Uses the
+    same announcement id, so a tap on either send opens the same detail
+    page; "Reached" accumulates across every send rather than resetting."""
+    row = db.query_one(
+        "SELECT title, message, photo_url, logo_url, sent_count FROM announcements WHERE id=%s",
+        (aid,),
+    )
+    if row is None:
+        return jsonify({"error": "Announcement not found"}), 404
+
+    sent_count, error = _send_push_to_all(
+        aid, row["title"], row["message"], row["photo_url"], row["logo_url"]
+    )
+    total = (row["sent_count"] or 0) + sent_count
+    if sent_count:
+        db.execute("UPDATE announcements SET sent_count=%s WHERE id=%s", (total, aid))
+
+    return jsonify({"id": aid, "sent_count": sent_count, "total": total, "error": error})
+
+
 # ---------------------------------------------------- admin: transactions
 @app.get("/api/admin/transactions")
 @require_admin
