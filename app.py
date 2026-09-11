@@ -384,10 +384,23 @@ VALID_WINDOWS = {"day", "week", "month", "year"}
 @app.get("/api/admin/fee-rules")
 @require_admin
 def list_fee_rules():
-    rows = db.query_all("SELECT * FROM fee_rules ORDER BY network")
-    for r in rows:
-        r["active"] = bool(r["active"])
-    return jsonify(rows)
+    # A network with no row yet (a fresh database that was never seeded)
+    # still gets a default card here — the only way to create the row is
+    # the PUT this same card's Save button sends, so the dashboard must
+    # never depend on the row already existing to show that button at all.
+    by_network = {r["network"]: r for r in db.query_all("SELECT * FROM fee_rules")}
+    out = []
+    for network in sorted(VALID_NETWORKS):
+        row = by_network.get(network) or {
+            "network": network,
+            "fee_amount": 0,
+            "trigger_count": 5,
+            "trigger_window": "month",
+            "active": False,
+        }
+        row["active"] = bool(row["active"])
+        out.append(row)
+    return jsonify(out)
 
 
 @app.put("/api/admin/fee-rules/<network>")
@@ -458,10 +471,19 @@ def _mask_key(key):
 @app.get("/api/admin/provider-keys")
 @require_admin
 def list_provider_keys():
-    rows = db.query_all("SELECT * FROM provider_keys")
+    # Same reasoning as fee-rules above: a network with no row yet must
+    # still get a card, since the PUT that would create the row is only
+    # reachable from that card's own Save button.
+    by_network = {r["network"]: r for r in db.query_all("SELECT * FROM provider_keys")}
     out = []
-    for r in rows:
-        relevant = _PROVIDER_FIELDS.get(r["network"], [])
+    for network in sorted(VALID_NETWORKS):
+        r = by_network.get(network) or {
+            "network": network,
+            "environment": "sandbox",
+            "base_url": None,
+            "target_environment": None,
+        }
+        relevant = _PROVIDER_FIELDS.get(network, [])
         masked = {}
         for f in _ALL_PROVIDER_FIELDS:
             value = r.pop(f, None)

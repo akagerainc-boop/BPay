@@ -13,6 +13,56 @@
   --error: #d93025;
   --warning: #e8710a;
   --radius: 14px;
+  --row-hover: #fcfcfd;
+  --ghost-hover: #eeeef1;
+  --success-bg: #e7f4ea;
+  --warning-bg: #fdf0e4;
+  --error-bg: #fdeceb;
+  --shadow: rgba(0, 0, 0, 0.08);
+  --modal-backdrop: rgba(20, 20, 25, 0.45);
+}
+
+/* Follows the OS by default when the admin hasn't chosen explicitly (no
+   [data-theme] attribute yet); [data-theme="dark"] / "light" from the
+   toggle below always wins over that. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #eeeef1;
+    --ink-2: #c6c7cf;
+    --muted: #8b8d97;
+    --surface: #131418;
+    --border: #2b2c33;
+    --white: #1c1d22;
+    --success: #34c95e;
+    --error: #ff6259;
+    --warning: #ffa64d;
+    --row-hover: #202126;
+    --ghost-hover: #26272d;
+    --success-bg: rgba(52, 201, 94, 0.16);
+    --warning-bg: rgba(255, 166, 77, 0.16);
+    --error-bg: rgba(255, 98, 89, 0.16);
+    --shadow: rgba(0, 0, 0, 0.4);
+    --modal-backdrop: rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink: #eeeef1;
+  --ink-2: #c6c7cf;
+  --muted: #8b8d97;
+  --surface: #131418;
+  --border: #2b2c33;
+  --white: #1c1d22;
+  --success: #34c95e;
+  --error: #ff6259;
+  --warning: #ffa64d;
+  --row-hover: #202126;
+  --ghost-hover: #26272d;
+  --success-bg: rgba(52, 201, 94, 0.16);
+  --warning-bg: rgba(255, 166, 77, 0.16);
+  --error-bg: rgba(255, 98, 89, 0.16);
+  --shadow: rgba(0, 0, 0, 0.4);
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -21,6 +71,10 @@
    stylesheet, so any author rule setting `display` (as .modal and
    .login-wrap do) silently overrides it. This keeps `hidden` honest. */
 [hidden] { display: none !important; }
+
+html { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 body {
   margin: 0;
@@ -47,7 +101,7 @@ body {
 .login-card {
   background: var(--white); padding: 32px; border-radius: 20px;
   width: 100%; max-width: 360px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.08);
+  box-shadow: 0 12px 40px var(--shadow);
 }
 .login-sub { margin: 4px 0 24px; color: var(--muted); }
 .login-card label {
@@ -188,17 +242,17 @@ th {
 }
 td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: #fcfcfd; }
+tbody tr:hover { background: var(--row-hover); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 
 .pill {
   display: inline-block; padding: 3px 9px; border-radius: 999px;
   font-size: 11.5px; font-weight: 700;
 }
-.pill.on { background: #e7f4ea; color: var(--success); }
-.pill.off { background: #f1f1f3; color: var(--muted); }
-.pill.warn { background: #fdf0e4; color: var(--warning); }
-.pill.err { background: #fdeceb; color: var(--error); }
+.pill.on { background: var(--success-bg); color: var(--success); }
+.pill.off { background: var(--surface); color: var(--muted); }
+.pill.warn { background: var(--warning-bg); color: var(--warning); }
+.pill.err { background: var(--error-bg); color: var(--error); }
 
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
@@ -210,14 +264,14 @@ tbody tr:hover { background: #fcfcfd; }
 .btn.primary { background: var(--yellow); color: var(--on-yellow); }
 .btn.primary:hover { filter: brightness(0.95); }
 .btn.ghost { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border); }
-.btn.ghost:hover { background: #eeeef1; }
-.btn.danger { background: #fdeceb; color: var(--error); }
+.btn.ghost:hover { background: var(--ghost-hover); }
+.btn.danger { background: var(--error-bg); color: var(--error); }
 .btn.small { padding: 6px 11px; font-size: 12px; }
 .btn.full { width: 100%; margin-top: 6px; }
 
 /* ------------------------------------------------------------- modal */
 .modal {
-  position: fixed; inset: 0; background: rgba(20,20,25,.45);
+  position: fixed; inset: 0; background: var(--modal-backdrop);
   display: grid; place-items: center; padding: 20px; z-index: 50;
 }
 .modal-card {

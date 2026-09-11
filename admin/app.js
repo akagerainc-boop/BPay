@@ -91,6 +91,30 @@ function signOut() {
 
 document.getElementById("logout").addEventListener("click", signOut);
 
+/* -------------------------------------------------------------- theme */
+const themeToggleBtn = document.getElementById("theme-toggle");
+
+function currentTheme() {
+  const saved = document.documentElement.dataset.theme;
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("bpay_admin_theme", theme); } catch (_) {}
+  themeToggleBtn.textContent = theme === "dark" ? "☀️" : "🌙";
+  themeToggleBtn.title = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+}
+
+themeToggleBtn.addEventListener("click", () => {
+  applyTheme(currentTheme() === "dark" ? "light" : "dark");
+});
+
+applyTheme(currentTheme());
+
 function showApp() {
   document.getElementById("login-view").hidden = true;
   document.getElementById("app-view").hidden = false;
