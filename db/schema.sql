@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS payment_link_settings (
   id                 INT PRIMARY KEY DEFAULT 1,
   app_domain         VARCHAR(255) NULL,
   play_store_url     VARCHAR(500) NULL,
-  sha256_fingerprint VARCHAR(255) NULL,
+  sha256_fingerprint VARCHAR(1000) NULL,
   fee_amount         INT NOT NULL DEFAULT 0,
   fee_threshold      INT NOT NULL DEFAULT 5,
   active             TINYINT(1) NOT NULL DEFAULT 0,

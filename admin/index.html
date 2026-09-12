@@ -188,8 +188,14 @@
           <span class="field-hint">
             Required for Android to trust this domain as the app's own —
             without it, every link opens in a browser instead of BPay.
-            Comma-separate the debug and release signing certs to allow
-            both a locally-built test app and the real Play Store release.
+            Paste as many as apply, comma-separated — not just one: the
+            debug cert from a locally-built test app, plus every cert
+            Google Play Console's App integrity page lists for the real
+            release (it now hands out several at once — one for the
+            current classical signing scheme and one or two more for its
+            hybrid/post-quantum transition — extra ones here never cause
+            harm, Android just checks whether the app's actual cert
+            matches any entry in the list).
           </span>
         </label>
         <label>Google Play Store URL

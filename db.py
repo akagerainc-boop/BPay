@@ -99,13 +99,23 @@ def ensure_payment_link_schema():
                  id                 INT PRIMARY KEY DEFAULT 1,
                  app_domain         VARCHAR(255) NULL,
                  play_store_url     VARCHAR(500) NULL,
-                 sha256_fingerprint VARCHAR(255) NULL,
+                 sha256_fingerprint VARCHAR(1000) NULL,
                  fee_amount         INT NOT NULL DEFAULT 0,
                  fee_threshold      INT NOT NULL DEFAULT 5,
                  active             TINYINT(1) NOT NULL DEFAULT 0,
                  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                                              ON UPDATE CURRENT_TIMESTAMP
                ) ENGINE=InnoDB"""
+        )
+        # A single SHA-256 fingerprint formatted as "AA:BB:...:FF" is 95
+        # characters — Google Play App Signing alone can hand out three at
+        # once (a classical cert plus two for its hybrid/post-quantum
+        # transition), and a debug cert for local testing makes four. The
+        # original VARCHAR(255) only had room for about two; widened here
+        # for databases created before this was noticed.
+        cur.execute(
+            "ALTER TABLE payment_link_settings MODIFY COLUMN "
+            "sha256_fingerprint VARCHAR(1000) NULL"
         )
         try:
             cur.execute(
