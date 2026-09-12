@@ -845,6 +845,12 @@ def create_payment_link():
     device_id = (b.get("device_id") or "").strip()
     owner_phone = (b.get("owner_phone") or "").strip() or None
     owner_network = b.get("owner_network")
+    # The app sends its SIM's detected network, which can be "unknown" (no
+    # SIM chosen yet, or a network BPay couldn't classify) — that's not a
+    # reason to refuse generating the link, just a link that can't accrue
+    # a billable usage fee until the owner's network is known.
+    if owner_network not in ("mtn", "airtel"):
+        owner_network = None
     destination_raw = (b.get("destination") or "").strip()
     try:
         amount = int(b.get("amount") or 0)
@@ -855,8 +861,6 @@ def create_payment_link():
         return jsonify({"error": "device_id is required"}), 400
     if amount <= 0:
         return jsonify({"error": "amount must be positive"}), 400
-    if owner_network not in ("mtn", "airtel", None):
-        return jsonify({"error": "owner_network must be mtn or airtel"}), 400
 
     settings = _link_settings()
     if not settings.get("active"):
