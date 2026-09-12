@@ -41,6 +41,7 @@
       <button class="tab" data-tab="ussd">USSD codes</button>
       <button class="tab" data-tab="services">Services</button>
       <button class="tab" data-tab="fees">Fees &amp; API keys</button>
+      <button class="tab" data-tab="payment-links">Payment links</button>
       <button class="tab" data-tab="announcements">Announcements</button>
       <button class="tab" data-tab="users">Users</button>
       <button class="tab" data-tab="transactions">Transactions</button>
@@ -148,6 +149,83 @@
         portal. Secrets are masked here and never sent to the app.
       </p>
       <div class="cards-row" id="provider-keys"></div>
+    </section>
+
+    <!-- -------------------------------------------------- payment links -->
+    <section id="tab-payment-links" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Payment link setup</h2>
+      </div>
+      <p class="muted note">
+        Controls the "Generate payment link" feature in the app — a user
+        shares a BPay link, and whoever taps it opens the app with the
+        amount and recipient already filled in and the dial already
+        started. The domain below must actually serve
+        <code>/.well-known/assetlinks.json</code> (this backend does, once
+        a fingerprint is set) for Android to open links in the app instead
+        of a browser — see the note under Domain.
+      </p>
+      <div class="card" id="link-settings-card">
+        <label>Enable payment links for users
+          <div class="checkline" style="margin-top:6px">
+            <input type="checkbox" id="link-active">
+            <span id="link-active-label">Disabled</span>
+          </div>
+        </label>
+        <label>Domain
+          <input type="text" id="link-domain" placeholder="bpay-backend-cmrn.onrender.com">
+          <span class="field-hint">
+            Links look like https://&lt;domain&gt;/pay/&lt;code&gt;. Leave
+            blank to use this server's own address. A custom domain needs
+            its own HTTPS certificate and must proxy straight through to
+            this backend (including /.well-known/assetlinks.json) — the
+            app's Android manifest also has to list this exact domain,
+            which means a new build after changing it.
+          </span>
+        </label>
+        <label>Android signing certificate SHA-256 fingerprint(s)
+          <input type="text" id="link-fingerprint" placeholder="AA:BB:CC:…, DD:EE:FF:…">
+          <span class="field-hint">
+            Required for Android to trust this domain as the app's own —
+            without it, every link opens in a browser instead of BPay.
+            Comma-separate the debug and release signing certs to allow
+            both a locally-built test app and the real Play Store release.
+          </span>
+        </label>
+        <label>Google Play Store URL
+          <input type="text" id="link-play-store" placeholder="https://play.google.com/store/apps/details?id=com.akagerainc.bpay">
+          <span class="field-hint">Shown to whoever taps a link without BPay installed.</span>
+        </label>
+        <label>Fee amount (RWF)
+          <input type="number" min="0" id="link-fee-amount">
+        </label>
+        <label>Charge the link owner after this many payments received
+          <input type="number" min="1" id="link-fee-threshold">
+          <span class="field-hint">
+            E.g. 5 means the owner is billed once per 5 payments their
+            link receives — 20 payments in, that's 4 charges so far, using
+            the same provider credentials as the Service fee above.
+          </span>
+        </label>
+        <button class="btn primary" id="link-settings-save">Save</button>
+      </div>
+
+      <div class="panel-head" style="margin-top:32px">
+        <h2>All payment links</h2>
+        <button class="btn ghost" id="refresh-payment-links">Refresh</button>
+      </div>
+      <p class="muted note">Every link any user has generated, most recent first.</p>
+      <div class="table-wrap">
+        <table id="payment-links-table">
+          <thead>
+            <tr>
+              <th>Created</th><th>Owner</th><th>Pays to</th><th>Amount</th>
+              <th>Status</th><th>Uses</th><th>Fee charges</th><th>Link</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- --------------------------------------------------- announcements -->

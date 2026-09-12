@@ -112,11 +112,16 @@ CREATE TABLE IF NOT EXISTS transactions (
   verification  VARCHAR(32)  NOT NULL DEFAULT 'none',
   carrier_ref   VARCHAR(64)  NULL,
   message       TEXT         NULL,
+  -- Set only when this transaction was paid through someone else's
+  -- payment link (see `payment_links`) — how the link owner's usage count
+  -- (and eventually their per-use fee) gets attributed.
+  payment_link_code VARCHAR(16) NULL,
   created_at    DATETIME     NOT NULL,
   received_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   INDEX idx_created (created_at),
-  INDEX idx_status (status)
+  INDEX idx_status (status),
+  INDEX idx_link_code (payment_link_code)
 ) ENGINE=InnoDB;
 
 -- --------------------------------------------------------------- devices
@@ -205,6 +210,60 @@ CREATE TABLE IF NOT EXISTS provider_keys (
                               ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- ---------------------------------------------------------- payment_links
+-- A shareable BPay link a user generates for others to pay them: tap it,
+-- and BPay opens with the recipient/merchant and amount already filled in
+-- and the dial already started (Android App Links / iOS Universal Links —
+-- see `payment_link_settings` for the domain and cert config that makes
+-- the OS hand the link straight to the app instead of a browser).
+CREATE TABLE IF NOT EXISTS payment_links (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  code              VARCHAR(16)  NOT NULL UNIQUE,
+  device_id         VARCHAR(128) NOT NULL,
+  owner_phone       VARCHAR(20)  NULL,
+  -- The owner's OWN mobile-money network — who the usage fee below is
+  -- actually charged against. Distinct from `network`, which classifies
+  -- the destination for routing the payer's own dial.
+  owner_network     ENUM('mtn','airtel') NULL,
+  destination       VARCHAR(120) NOT NULL,
+  destination_type  ENUM('phone','merchant') NOT NULL,
+  network           ENUM('mtn','airtel','unknown') NOT NULL DEFAULT 'unknown',
+  amount            INT          NOT NULL,
+  status            ENUM('active','paused','deleted') NOT NULL DEFAULT 'active',
+
+  -- How many completed transactions have come in through this link, and
+  -- how many fee thresholds worth of those have already been billed —
+  -- the difference is what `fee_threshold` in payment_link_settings uses
+  -- to know a new charge is due, without ever double-billing the same use.
+  use_count         INT          NOT NULL DEFAULT 0,
+  fee_charges_done  INT          NOT NULL DEFAULT 0,
+
+  created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                 ON UPDATE CURRENT_TIMESTAMP,
+
+  INDEX idx_device (device_id),
+  INDEX idx_status (status)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------- payment_link_settings
+-- Single global row the header admin controls: which domain the links
+-- point at, where to send someone who taps one without BPay installed,
+-- the signing certificate fingerprint the domain's assetlinks.json must
+-- publish, and the usage-based fee a link owner is charged after every
+-- `fee_threshold` payments received through their link.
+CREATE TABLE IF NOT EXISTS payment_link_settings (
+  id                 INT PRIMARY KEY DEFAULT 1,
+  app_domain         VARCHAR(255) NULL,
+  play_store_url     VARCHAR(500) NULL,
+  sha256_fingerprint VARCHAR(255) NULL,
+  fee_amount         INT NOT NULL DEFAULT 0,
+  fee_threshold      INT NOT NULL DEFAULT 5,
+  active             TINYINT(1) NOT NULL DEFAULT 0,
+  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                              ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
 -- ------------------------------------------------------- fee_collections
 -- One row per Request-to-Pay actually attempted against a real provider —
 -- this is the company's real ledger of fee money requested from users,
@@ -219,9 +278,11 @@ CREATE TABLE IF NOT EXISTS fee_collections (
   status              ENUM('pending','successful','failed') NOT NULL DEFAULT 'pending',
   reason              VARCHAR(255) NULL,
   device_id           VARCHAR(128) NULL,
+  payment_link_code   VARCHAR(16)  NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                                ON UPDATE CURRENT_TIMESTAMP,
 
-  INDEX idx_status (status)
+  INDEX idx_status (status),
+  INDEX idx_fee_link_code (payment_link_code)
 ) ENGINE=InnoDB;

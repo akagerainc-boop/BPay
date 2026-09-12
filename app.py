@@ -9,6 +9,9 @@ has defined in `ussd_templates` and `services`.
 """
 
 import os
+import random
+import re
+import string
 import uuid
 from datetime import datetime
 
@@ -29,6 +32,11 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=None)
 CORS(app)
+
+try:
+    db.ensure_payment_link_schema()
+except Exception:  # noqa: BLE001 - a transient DB hiccup at boot must never crash the app
+    pass
 
 # Placeholders an admin may use inside a USSD template. Kept here so the
 # dashboard and the app agree on exactly one vocabulary.
@@ -159,12 +167,20 @@ def report_transaction():
     if not b.get("bpay_id"):
         return jsonify({"error": "bpay_id is required"}), 400
 
+    link_code = (b.get("payment_link_code") or "").strip() or None
+    # Only a genuinely new report counts as a "use" of the link — this same
+    # bpay_id gets reported again as its status resolves, and that update
+    # must never count a second time.
+    is_new = db.query_one(
+        "SELECT id FROM transactions WHERE bpay_id=%s", (b.get("bpay_id"),)
+    ) is None
+
     db.execute(
         """INSERT INTO transactions
              (bpay_id, device_id, user_phone, sim_network, type, destination,
               destination_name, amount, status, verification, carrier_ref,
-              message, created_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              message, payment_link_code, created_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON DUPLICATE KEY UPDATE
              status = VALUES(status),
              verification = VALUES(verification),
@@ -183,9 +199,17 @@ def report_transaction():
             b.get("verification", "none"),
             b.get("carrier_ref"),
             b.get("message"),
+            link_code,
             b.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         ),
     )
+
+    if is_new and link_code:
+        try:
+            _record_payment_link_use(link_code)
+        except Exception:  # noqa: BLE001 - a billing hiccup must never break reporting
+            pass
+
     return jsonify({"ok": True}), 201
 
 
@@ -571,6 +595,59 @@ def _provider_client(network):
     return airtel_client
 
 
+def _start_fee_collection(
+    network, phone, amount, device_id=None, message="BPay service fee", payment_link_code=None
+):
+    """One Request-to-Pay against a real provider, logged in `fee_collections`
+    either way. Shared by the client-initiated service-fee flow and the
+    client-initiated payment-link usage fee — same ledger, same provider
+    plumbing, only who triggers it differs. Returns the fee_collections
+    row id and the outcome dict the caller should respond with.
+    Raises ValueError for a caller-fixable problem (bad input, provider not
+    configured) so each endpoint can shape its own 400/503 response.
+    [payment_link_code] is stamped on the row so `get_fee_collection_status`
+    knows which link to credit once the provider confirms it succeeded."""
+    if network not in VALID_NETWORKS:
+        raise ValueError("network must be mtn or airtel")
+    if not phone:
+        raise ValueError("phone is required")
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+
+    config = _provider_config(network)
+    fields = _PROVIDER_FIELDS.get(network, [])
+    if not all(config.get(f) for f in fields):
+        raise LookupError(
+            f"{network.upper()} isn't fully configured yet — an administrator "
+            "needs to add its API credentials."
+        )
+
+    external_id = uuid.uuid4().hex
+    new_id = db.execute(
+        """INSERT INTO fee_collections
+             (network, phone, amount, external_id, status, device_id, payment_link_code)
+           VALUES (%s,%s,%s,%s,'pending',%s,%s)""",
+        (network, phone, amount, external_id, device_id, payment_link_code),
+    )
+
+    client = _provider_client(network)
+    try:
+        reference = client.request_to_pay(
+            config, phone=phone, amount=amount, external_id=external_id, message=message
+        )
+        db.execute(
+            "UPDATE fee_collections SET provider_reference=%s WHERE id=%s",
+            (reference, new_id),
+        )
+        return new_id, {"id": new_id, "status": "pending"}
+    except Exception as exc:  # noqa: BLE001 - surfaced to the caller, not fatal
+        db.execute(
+            "UPDATE fee_collections SET status='failed', reason=%s WHERE id=%s",
+            (str(exc)[:255], new_id),
+        )
+        return new_id, {"id": new_id, "status": "failed", "reason": str(exc)}
+
+
 @app.post("/api/fee-collection/request")
 def create_fee_collection():
     b = request.get_json(silent=True) or {}
@@ -582,55 +659,14 @@ def create_fee_collection():
     except (TypeError, ValueError):
         return jsonify({"error": "amount must be a number"}), 400
 
-    if network not in VALID_NETWORKS:
-        return jsonify({"error": "network must be mtn or airtel"}), 400
-    if not phone:
-        return jsonify({"error": "phone is required"}), 400
-    if amount <= 0:
-        return jsonify({"error": "amount must be positive"}), 400
-
-    config = _provider_config(network)
-    fields = _PROVIDER_FIELDS.get(network, [])
-    if not all(config.get(f) for f in fields):
-        return (
-            jsonify(
-                {
-                    "error": f"{network.upper()} isn't fully configured yet — an "
-                    "administrator needs to add its API credentials."
-                }
-            ),
-            503,
-        )
-
-    external_id = uuid.uuid4().hex
-    new_id = db.execute(
-        """INSERT INTO fee_collections
-             (network, phone, amount, external_id, status, device_id)
-           VALUES (%s,%s,%s,%s,'pending',%s)""",
-        (network, phone, amount, external_id, device_id),
-    )
-
-    client = _provider_client(network)
     try:
-        reference = client.request_to_pay(
-            config,
-            phone=phone,
-            amount=amount,
-            external_id=external_id,
-            message="BPay service fee",
-        )
-        db.execute(
-            "UPDATE fee_collections SET provider_reference=%s WHERE id=%s",
-            (reference, new_id),
-        )
-    except Exception as exc:  # noqa: BLE001 - surfaced to the app, not fatal
-        db.execute(
-            "UPDATE fee_collections SET status='failed', reason=%s WHERE id=%s",
-            (str(exc)[:255], new_id),
-        )
-        return jsonify({"id": new_id, "status": "failed", "reason": str(exc)}), 502
+        _new_id, outcome = _start_fee_collection(network, phone, amount, device_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 503
 
-    return jsonify({"id": new_id, "status": "pending"}), 201
+    return jsonify(outcome), (502 if outcome["status"] == "failed" else 201)
 
 
 @app.get("/api/fee-collection/<int:cid>/status")
@@ -654,7 +690,421 @@ def get_fee_collection_status(cid):
             "UPDATE fee_collections SET status=%s, reason=%s WHERE id=%s",
             (status, reason, cid),
         )
+        # Only a payment-link fee row carries this, and only the moment it
+        # resolves — this is the one place a successful charge actually
+        # counts against the link's `fee_charges_done`, so a client that
+        # started the charge and never polled again still gets credited
+        # correctly the next time anyone checks this row's status.
+        if status == "successful" and row.get("payment_link_code"):
+            db.execute(
+                "UPDATE payment_links SET fee_charges_done=fee_charges_done+1 "
+                "WHERE code=%s",
+                (row["payment_link_code"],),
+            )
     return jsonify({"status": status, "reason": reason})
+
+
+# -------------------------------------------------------- payment links
+# A shareable BPay link: tap it, and the app opens with the recipient/
+# merchant and amount already filled in and the dial already started
+# (Android App Links — see payment_link_settings for the domain/cert that
+# makes the OS hand the link straight to the app instead of a browser).
+MTN_PREFIXES = ("078", "079")
+AIRTEL_PREFIXES = ("072", "073")
+
+
+def _classify_destination(raw):
+    """Mirrors RwandaPhoneValidator on the Flutter side: a recognised
+    Rwandan mobile number classifies as a phone (with its network), a
+    plain 4-10 digit string otherwise classifies as a merchant code.
+    Returns (destination_type, network, normalized) or (None, None, None)
+    when neither shape matches."""
+    digits = re.sub(r"[^0-9]", "", raw or "")
+    if not digits:
+        return None, None, None
+
+    d = digits
+    if d.startswith("250") and len(d) > 3:
+        d = d[3:]
+    if len(d) == 9 and d.startswith("7"):
+        d = "0" + d
+    if len(d) == 10 and d.startswith("0") and d[:3] in MTN_PREFIXES + AIRTEL_PREFIXES:
+        network = "mtn" if d[:3] in MTN_PREFIXES else "airtel"
+        return "phone", network, d
+
+    if 4 <= len(digits) <= 10:
+        return "merchant", "unknown", digits
+
+    return None, None, None
+
+
+def _generate_link_code():
+    alphabet = string.ascii_lowercase + string.digits
+    for _ in range(20):
+        code = "".join(random.choices(alphabet, k=8))
+        if not db.query_one("SELECT id FROM payment_links WHERE code=%s", (code,)):
+            return code
+    raise RuntimeError("Could not generate a unique payment link code")
+
+
+def _link_settings():
+    row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
+    if row is None:
+        db.execute(
+            "INSERT INTO payment_link_settings (id, active) VALUES (1, 0)"
+        )
+        row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
+    return row or {}
+
+
+def _link_url(code, settings=None):
+    settings = settings or _link_settings()
+    domain = (settings.get("app_domain") or "").strip() or request.host
+    return f"https://{domain}/pay/{code}"
+
+
+def _isoformat_rows(rows, fields=("created_at", "updated_at")):
+    """Flask's default JSON encoding renders a raw `datetime` as an
+    RFC-822-style HTTP date, which Dart's `DateTime.parse`/`tryParse`
+    cannot read (see the same fix on `get_announcement`) — every payment-
+    link endpoint the Flutter app calls needs ISO-8601 instead."""
+    for row in rows:
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, datetime):
+                row[field] = value.isoformat() + "Z"
+    return rows
+
+
+def _record_payment_link_use(code):
+    """Counts one use toward this link's usage fee. Nothing is charged from
+    here — a threshold of 5 crossed at the 5th use just becomes a pending
+    charge (see `_pending_fee_charge`) the owner's own app notices next
+    time it asks, shows a local notification for, and only actually bills
+    once its owner taps Pay: the same real Request-to-Pay + on-phone
+    approval every other fee in BPay already goes through, never a charge
+    silently fired from the server the moment a threshold ticks over."""
+    link = db.query_one("SELECT * FROM payment_links WHERE code=%s", (code,))
+    if link is None:
+        return
+    db.execute(
+        "UPDATE payment_links SET use_count=use_count+1 WHERE id=%s", (link["id"],)
+    )
+
+
+def _pending_fee_charge(link, settings=None):
+    """How much this link's owner currently owes, and the fee amount that
+    figure is denominated in — 0 whenever nothing is due, the feature is
+    off, or there's no owner phone/network on file to charge at all."""
+    settings = settings if settings is not None else _link_settings()
+    threshold = settings.get("fee_threshold") or 0
+    fee_amount = settings.get("fee_amount") or 0
+    if (
+        not settings.get("active")
+        or threshold <= 0
+        or fee_amount <= 0
+        or not link.get("owner_phone")
+        or not link.get("owner_network")
+    ):
+        return fee_amount, 0
+    charges_due = (link.get("use_count") or 0) // threshold
+    already_charged = link.get("fee_charges_done") or 0
+    return fee_amount, max(0, charges_due - already_charged)
+
+
+@app.post("/api/payment-links")
+def create_payment_link():
+    b = request.get_json(silent=True) or {}
+    device_id = (b.get("device_id") or "").strip()
+    owner_phone = (b.get("owner_phone") or "").strip() or None
+    owner_network = b.get("owner_network")
+    destination_raw = (b.get("destination") or "").strip()
+    try:
+        amount = int(b.get("amount") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount must be a number"}), 400
+
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+    if amount <= 0:
+        return jsonify({"error": "amount must be positive"}), 400
+    if owner_network not in ("mtn", "airtel", None):
+        return jsonify({"error": "owner_network must be mtn or airtel"}), 400
+
+    settings = _link_settings()
+    if not settings.get("active"):
+        return jsonify({"error": "Payment links are not enabled yet."}), 503
+
+    dtype, network, normalized = _classify_destination(destination_raw)
+    if dtype is None:
+        return jsonify({"error": "Enter a valid phone number or merchant code."}), 400
+
+    code = _generate_link_code()
+    db.execute(
+        """INSERT INTO payment_links
+             (code, device_id, owner_phone, owner_network, destination,
+              destination_type, network, amount)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (code, device_id, owner_phone, owner_network, normalized, dtype, network, amount),
+    )
+    return jsonify({"code": code, "url": _link_url(code, settings)}), 201
+
+
+@app.get("/api/payment-links")
+def list_payment_links():
+    device_id = request.args.get("device_id")
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+    rows = db.query_all(
+        """SELECT * FROM payment_links
+           WHERE device_id=%s AND status != 'deleted'
+           ORDER BY created_at DESC""",
+        (device_id,),
+    )
+    settings = _link_settings()
+    for r in rows:
+        r["url"] = _link_url(r["code"], settings)
+        r["fee_amount"], r["pending_fee_charges"] = _pending_fee_charge(r, settings)
+    return jsonify(_isoformat_rows(rows))
+
+
+@app.get("/api/payment-links/<code>")
+def resolve_payment_link(code):
+    """Public — this is what both the app's deep-link handler and the
+    /pay/<code> browser fallback call to find out what to pay."""
+    row = db.query_one("SELECT * FROM payment_links WHERE code=%s", (code,))
+    if row is None or row["status"] == "deleted":
+        return jsonify({"error": "This payment link no longer exists."}), 404
+    if row["status"] == "paused":
+        return jsonify({"error": "This payment link is currently paused."}), 410
+    return jsonify(
+        {
+            "code": row["code"],
+            "destination": row["destination"],
+            "destination_type": row["destination_type"],
+            "network": row["network"],
+            "amount": row["amount"],
+            "owner_phone": row["owner_phone"],
+        }
+    )
+
+
+@app.get("/api/payment-links/<code>/uses")
+def payment_link_uses(code):
+    rows = db.query_all(
+        """SELECT * FROM transactions WHERE payment_link_code=%s
+           ORDER BY created_at DESC LIMIT 200""",
+        (code,),
+    )
+    return jsonify(_isoformat_rows(rows))
+
+
+def _owned_link_or_error(code, device_id):
+    row = db.query_one("SELECT * FROM payment_links WHERE code=%s", (code,))
+    if row is None or row["status"] == "deleted":
+        return None, (jsonify({"error": "Not found"}), 404)
+    if device_id and device_id != row["device_id"]:
+        return None, (jsonify({"error": "Not authorized"}), 403)
+    return row, None
+
+
+@app.patch("/api/payment-links/<code>")
+def update_payment_link(code):
+    b = request.get_json(silent=True) or {}
+    row, error = _owned_link_or_error(code, b.get("device_id"))
+    if error:
+        return error
+
+    result_code = code
+    if b.get("regenerate"):
+        result_code = _generate_link_code()
+        db.execute(
+            "UPDATE payment_links SET code=%s WHERE id=%s", (result_code, row["id"])
+        )
+    if b.get("status") in ("active", "paused"):
+        db.execute(
+            "UPDATE payment_links SET status=%s WHERE id=%s", (b["status"], row["id"])
+        )
+    if "amount" in b:
+        try:
+            amount = int(b["amount"])
+        except (TypeError, ValueError):
+            amount = None
+        if amount and amount > 0:
+            db.execute(
+                "UPDATE payment_links SET amount=%s WHERE id=%s", (amount, row["id"])
+            )
+
+    return jsonify({"code": result_code, "url": _link_url(result_code)})
+
+
+@app.delete("/api/payment-links/<code>")
+def delete_payment_link(code):
+    device_id = request.args.get("device_id")
+    row, error = _owned_link_or_error(code, device_id)
+    if error:
+        return error
+    db.execute("UPDATE payment_links SET status='deleted' WHERE id=%s", (row["id"],))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/payment-links/<code>/charge-fee")
+def charge_payment_link_fee(code):
+    """Client-initiated, same as every other fee in BPay: the owner's own
+    app noticed (via `pending_fee_charges` on `GET /api/payment-links`)
+    that a threshold was crossed, showed a local notification and a pay
+    popup, and the owner tapped Pay — only then does a real Request-to-Pay
+    go out. Nothing here is ever triggered by the server on its own."""
+    b = request.get_json(silent=True) or {}
+    row, error = _owned_link_or_error(code, b.get("device_id"))
+    if error:
+        return error
+
+    fee_amount, pending = _pending_fee_charge(row)
+    if pending <= 0:
+        return jsonify({"error": "No fee is currently due on this link."}), 400
+
+    phone = (b.get("phone") or row.get("owner_phone") or "").strip()
+    network = row.get("owner_network")
+    if not network:
+        return jsonify({"error": "This link has no owner network on file."}), 400
+
+    try:
+        _new_id, outcome = _start_fee_collection(
+            network,
+            phone,
+            fee_amount,
+            device_id=row["device_id"],
+            message=f"BPay payment-link fee ({code})",
+            payment_link_code=code,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify(outcome), (502 if outcome["status"] == "failed" else 201)
+
+
+@app.get("/pay/<code>")
+def payment_link_landing(code):
+    """What a browser shows when the OS didn't hand the link straight to
+    the app (App Links verification failed, or BPay isn't installed) —
+    this is the fallback the assetlinks.json / App Links setup exists to
+    make unnecessary in the common case."""
+    row = db.query_one("SELECT * FROM payment_links WHERE code=%s", (code,))
+    settings = _link_settings()
+    play_url = settings.get("play_store_url") or "#"
+
+    if row is None or row["status"] == "deleted":
+        message = "This payment link no longer exists."
+    elif row["status"] == "paused":
+        message = "This payment link is currently paused by its owner."
+    else:
+        who = row["destination"]
+        message = f"Pay {row['amount']} RWF to {who} via BPay"
+
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BPay Payment Link</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f6f6f8; margin: 0; padding: 48px 20px; text-align: center; }}
+.card {{ max-width: 360px; margin: 0 auto; background: #fff; border-radius: 20px;
+  padding: 28px; box-shadow: 0 12px 40px rgba(0,0,0,.08); }}
+.brand {{ font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }}
+.brand .pay {{ color: #ffcc00; }}
+p {{ color: #4a4c55; line-height: 1.5; }}
+a.btn {{ display: block; margin-top: 18px; padding: 14px; border-radius: 12px;
+  background: #ffcc00; color: #3e2116; text-decoration: none; font-weight: 700; }}
+</style></head>
+<body><div class="card">
+  <div class="brand"><span>B</span><span class="pay">Pay</span></div>
+  <p>{message}</p>
+  <a class="btn" href="{play_url}">Get BPay on Google Play</a>
+</div></body></html>"""
+    return html
+
+
+@app.get("/.well-known/assetlinks.json")
+def assetlinks():
+    """Android App Links verification file — its presence and content
+    here (correct package name + this app's real signing certificate
+    fingerprint) is what lets the OS hand a bpay /pay/<code> link straight
+    to the app instead of opening it in a browser."""
+    settings = _link_settings()
+    # Comma-separated so both a debug build (for testing) and the real
+    # Play Store release signing cert can be trusted at once.
+    raw = settings.get("sha256_fingerprint") or ""
+    fingerprints = [f.strip() for f in raw.split(",") if f.strip()]
+    return jsonify(
+        [
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": "com.akagerainc.bpay",
+                    "sha256_cert_fingerprints": fingerprints,
+                },
+            }
+        ]
+    )
+
+
+@app.get("/api/admin/payment-link-settings")
+@require_admin
+def get_link_settings():
+    s = _link_settings()
+    s["active"] = bool(s.get("active"))
+    return jsonify(s)
+
+
+@app.put("/api/admin/payment-link-settings")
+@require_admin
+def update_link_settings():
+    b = request.get_json(silent=True) or {}
+    try:
+        fee_amount = int(b.get("fee_amount") or 0)
+        fee_threshold = int(b.get("fee_threshold") or 5)
+    except (TypeError, ValueError):
+        return jsonify({"error": "fee_amount and fee_threshold must be numbers"}), 400
+    if fee_amount < 0 or fee_threshold < 1:
+        return jsonify({"error": "fee_amount must be >= 0 and fee_threshold >= 1"}), 400
+
+    db.execute(
+        """INSERT INTO payment_link_settings
+             (id, app_domain, play_store_url, sha256_fingerprint, fee_amount,
+              fee_threshold, active)
+           VALUES (1,%s,%s,%s,%s,%s,%s)
+           ON DUPLICATE KEY UPDATE
+             app_domain=VALUES(app_domain), play_store_url=VALUES(play_store_url),
+             sha256_fingerprint=VALUES(sha256_fingerprint),
+             fee_amount=VALUES(fee_amount), fee_threshold=VALUES(fee_threshold),
+             active=VALUES(active)""",
+        (
+            (b.get("app_domain") or "").strip() or None,
+            (b.get("play_store_url") or "").strip() or None,
+            (b.get("sha256_fingerprint") or "").strip() or None,
+            fee_amount,
+            fee_threshold,
+            1 if b.get("active") else 0,
+        ),
+    )
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/payment-links")
+@require_admin
+def admin_list_payment_links():
+    rows = db.query_all(
+        """SELECT * FROM payment_links WHERE status != 'deleted'
+           ORDER BY created_at DESC LIMIT 500"""
+    )
+    settings = _link_settings()
+    for r in rows:
+        r["url"] = _link_url(r["code"], settings)
+        r["fee_amount"], r["pending_fee_charges"] = _pending_fee_charge(r, settings)
+    return jsonify(_isoformat_rows(rows))
 
 
 # ------------------------------------------------------------- uploads

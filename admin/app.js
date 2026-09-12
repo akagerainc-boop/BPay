@@ -135,6 +135,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
     if (tab.dataset.tab === "transactions") loadTransactions();
     if (tab.dataset.tab === "overview") loadOverview();
     if (tab.dataset.tab === "fees") { loadFeeRules(); loadProviderKeys(); }
+    if (tab.dataset.tab === "payment-links") { loadLinkSettings(); loadPaymentLinks(); }
     if (tab.dataset.tab === "announcements") loadAnnouncements();
     if (tab.dataset.tab === "users") loadUsers();
   });
@@ -479,6 +480,64 @@ window.saveProviderKey = async (network) => {
     loadProviderKeys();
   } catch (err) { toast(err.message); }
 };
+
+/* ----------------------------------------------------- payment links */
+async function loadLinkSettings() {
+  try {
+    const s = await api("/api/admin/payment-link-settings");
+    document.getElementById("link-active").checked = !!s.active;
+    document.getElementById("link-active-label").textContent = s.active ? "Enabled" : "Disabled";
+    document.getElementById("link-domain").value = s.app_domain || "";
+    document.getElementById("link-fingerprint").value = s.sha256_fingerprint || "";
+    document.getElementById("link-play-store").value = s.play_store_url || "";
+    document.getElementById("link-fee-amount").value = s.fee_amount ?? 0;
+    document.getElementById("link-fee-threshold").value = s.fee_threshold ?? 5;
+  } catch (err) { toast(err.message); }
+}
+
+document.getElementById("link-active").addEventListener("change", (e) => {
+  document.getElementById("link-active-label").textContent = e.target.checked ? "Enabled" : "Disabled";
+});
+
+document.getElementById("link-settings-save").addEventListener("click", async () => {
+  const body = {
+    active: document.getElementById("link-active").checked,
+    app_domain: document.getElementById("link-domain").value.trim(),
+    sha256_fingerprint: document.getElementById("link-fingerprint").value.trim(),
+    play_store_url: document.getElementById("link-play-store").value.trim(),
+    fee_amount: Number(document.getElementById("link-fee-amount").value || 0),
+    fee_threshold: Number(document.getElementById("link-fee-threshold").value || 5),
+  };
+  try {
+    await api("/api/admin/payment-link-settings", { method: "PUT", body: JSON.stringify(body) });
+    toast("Payment link settings saved");
+  } catch (err) { toast(err.message); }
+});
+
+async function loadPaymentLinks() {
+  try {
+    const rows = await api("/api/admin/payment-links");
+    const tbody = document.querySelector("#payment-links-table tbody");
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">No payment links generated yet.</td></tr>`;
+      return;
+    }
+    const statusPill = (s) => (s === "active" ? "on" : s === "paused" ? "warn" : "off");
+    tbody.innerHTML = rows.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.created_at)}</td>
+        <td>${r.owner_phone ? escapeHtml(r.owner_phone) : `<span class="muted">${escapeHtml(r.device_id.slice(0, 10))}…</span>`}</td>
+        <td>${escapeHtml(r.destination)} <span class="muted">(${escapeHtml(r.network)})</span></td>
+        <td>${money(r.amount)}</td>
+        <td><span class="pill ${statusPill(r.status)}">${escapeHtml(r.status)}</span></td>
+        <td>${r.use_count}</td>
+        <td>${r.fee_charges_done}</td>
+        <td class="mono"><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.code)}</a></td>
+      </tr>`).join("");
+  } catch (err) { toast(err.message); }
+}
+
+document.getElementById("refresh-payment-links").addEventListener("click", loadPaymentLinks);
 
 /* --------------------------------------------------- announcements */
 async function uploadFile(file) {
