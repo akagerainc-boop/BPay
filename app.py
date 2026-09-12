@@ -832,6 +832,8 @@ def list_users():
                       COALESCE(SUM(status = 'failed'), 0) AS failed_count,
                       COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0)
                         AS total_volume,
+                      COALESCE(SUM(CASE WHEN status='failed' THEN amount ELSE 0 END), 0)
+                        AS failed_volume,
                       MAX(created_at) AS last_transaction_at
                FROM transactions
                WHERE device_id IS NOT NULL
@@ -855,6 +857,7 @@ def list_users():
                 "successful_count": int(tx_row.get("successful_count") or 0),
                 "failed_count": int(tx_row.get("failed_count") or 0),
                 "total_volume": int(tx_row.get("total_volume") or 0),
+                "failed_volume": int(tx_row.get("failed_volume") or 0),
                 "last_transaction_at": tx_row.get("last_transaction_at"),
             }
         )

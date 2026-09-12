@@ -610,7 +610,9 @@ async function loadUsers() {
         <td><span class="pill ${u.has_push_token ? "on" : "off"}">${u.has_push_token ? "On" : "Off"}</span></td>
         <td>${u.transaction_count}</td>
         <td>${u.successful_count}</td>
-        <td>${u.failed_count > 0 ? `<span class="pill err">${u.failed_count}</span>` : "0"}</td>
+        <td>${u.failed_count > 0
+          ? `<span class="pill err">${u.failed_count}</span> <span class="muted">${money(u.failed_volume)}</span>`
+          : "0"}</td>
         <td>${money(u.total_volume)}</td>
         <td>${escapeHtml(u.last_transaction_at || u.last_seen || "—")}</td>
       </tr>`).join("");
