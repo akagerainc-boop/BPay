@@ -599,7 +599,7 @@ async function loadUsers() {
     const rows = await api("/api/admin/users");
     const tbody = document.querySelector("#users-table tbody");
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="empty">No devices yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">No devices yet.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((u) => `
@@ -610,6 +610,7 @@ async function loadUsers() {
         <td><span class="pill ${u.has_push_token ? "on" : "off"}">${u.has_push_token ? "On" : "Off"}</span></td>
         <td>${u.transaction_count}</td>
         <td>${u.successful_count}</td>
+        <td>${u.failed_count > 0 ? `<span class="pill err">${u.failed_count}</span>` : "0"}</td>
         <td>${money(u.total_volume)}</td>
         <td>${escapeHtml(u.last_transaction_at || u.last_seen || "—")}</td>
       </tr>`).join("");

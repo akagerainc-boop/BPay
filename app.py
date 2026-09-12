@@ -196,6 +196,11 @@ def get_announcement(aid):
     row = db.query_one("SELECT id, title, message, photo_url, logo_url, created_at FROM announcements WHERE id=%s", (aid,))
     if not row:
         return jsonify({"error": "Not found"}), 404
+    # Flask's default JSON encoder renders a datetime as an RFC 822 string
+    # ("Mon, 07 Sep 2026 06:40:02 GMT"), which Dart's DateTime.parse cannot
+    # read — ISO 8601 is what every client here actually expects.
+    if row.get("created_at") is not None:
+        row["created_at"] = row["created_at"].isoformat() + "Z"
     return jsonify(row)
 
 
@@ -698,6 +703,10 @@ def _send_push_to_all(announcement_id, title, message, photo_url, logo_url):
         "body": message,
         "photo_url": photo_url or "",
         "logo_url": logo_url or "",
+        # The moment this particular push went out — a resend gets its own
+        # fresh timestamp here, distinct from the announcement's original
+        # created_at, since that's what "when was this sent" actually means.
+        "sent_at": datetime.utcnow().isoformat() + "Z",
     }
     sent = 0
     errors = []
@@ -820,6 +829,7 @@ def list_users():
                       MAX(sim_network) AS sim_network,
                       COUNT(*) AS transaction_count,
                       COALESCE(SUM(status = 'success'), 0) AS successful_count,
+                      COALESCE(SUM(status = 'failed'), 0) AS failed_count,
                       COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0)
                         AS total_volume,
                       MAX(created_at) AS last_transaction_at
@@ -843,6 +853,7 @@ def list_users():
                 "last_seen": token_row.get("updated_at"),
                 "transaction_count": int(tx_row.get("transaction_count") or 0),
                 "successful_count": int(tx_row.get("successful_count") or 0),
+                "failed_count": int(tx_row.get("failed_count") or 0),
                 "total_volume": int(tx_row.get("total_volume") or 0),
                 "last_transaction_at": tx_row.get("last_transaction_at"),
             }
