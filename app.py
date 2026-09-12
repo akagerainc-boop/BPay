@@ -36,7 +36,13 @@ CORS(app)
 try:
     db.ensure_payment_link_schema()
 except Exception:  # noqa: BLE001 - a transient DB hiccup at boot must never crash the app
-    pass
+    # Logged, not swallowed silently — a real migration failure (bad DB
+    # privileges, an incompatible SQL mode, whatever it turns out to be)
+    # used to leave every payment-link endpoint permanently 500ing with no
+    # trace of why. `_link_settings()` below also retries this once per
+    # process on first actual use, in case this only failed because the
+    # database wasn't reachable yet at boot.
+    app.logger.exception("ensure_payment_link_schema failed at startup")
 
 # Placeholders an admin may use inside a USSD template. Kept here so the
 # dashboard and the app agree on exactly one vocabulary.
@@ -747,8 +753,29 @@ def _generate_link_code():
     raise RuntimeError("Could not generate a unique payment link code")
 
 
+_schema_retried = False
+
+
 def _link_settings():
-    row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
+    global _schema_retried
+    try:
+        row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
+    except Exception:
+        # Most likely cause: the startup migration failed (see the log
+        # line from `ensure_payment_link_schema failed at startup`) and
+        # the table was never created — retried once per process rather
+        # than on every request, so a genuine, non-transient failure
+        # (e.g. the DB user lacking CREATE/ALTER privileges) still
+        # surfaces as a clear error instead of retrying forever.
+        if _schema_retried:
+            raise
+        _schema_retried = True
+        app.logger.exception(
+            "payment_link_settings query failed — retrying schema setup once"
+        )
+        db.ensure_payment_link_schema()
+        row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
+
     if row is None:
         db.execute(
             "INSERT INTO payment_link_settings (id, active) VALUES (1, 0)"
