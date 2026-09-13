@@ -165,12 +165,14 @@ def app_config():
     more_services = db.query_all(
         """SELECT id, name, description, category, icon, fields,
                   ussd_template_mtn, ussd_template_airtel,
-                  registration_ussd_mtn, registration_ussd_airtel, sort_order
+                  registration_ussd_mtn, registration_ussd_airtel,
+                  registration_fields, sort_order
            FROM more_services WHERE active = 1
            ORDER BY sort_order DESC, name ASC"""
     )
     for s in more_services:
         s["fields"] = _parse_fields(s.get("fields"))
+        s["registration_fields"] = _parse_fields(s.get("registration_fields"))
     more_services_settings = _more_services_settings()
 
     return jsonify(
@@ -444,12 +446,18 @@ def _parse_fields(raw):
     return fields if isinstance(fields, list) else []
 
 
-def _validate_fields(raw_fields):
+def _validate_fields(raw_fields, allow_empty=False):
     """Returns (fields, error) — fields is the cleaned list ready to store,
     error is a user-facing string, or None on success. Never trusts the
     dashboard blindly: a bad field type or a missing custom label would
-    otherwise silently break the app's dynamic form."""
-    if not isinstance(raw_fields, list) or not raw_fields:
+    otherwise silently break the app's dynamic form.
+    [allow_empty] is for the registration code, which often needs no input
+    at all — the main service fields still require at least one."""
+    if raw_fields is None:
+        raw_fields = []
+    if not isinstance(raw_fields, list):
+        return None, "Fields must be a list."
+    if not raw_fields and not allow_empty:
         return None, "At least one input field is required."
     if len(raw_fields) > MAX_MORE_SERVICE_FIELDS:
         return None, f"No more than {MAX_MORE_SERVICE_FIELDS} input fields are supported."
@@ -490,6 +498,7 @@ def list_more_services():
     for r in rows:
         r["active"] = bool(r["active"])
         r["fields"] = _parse_fields(r.get("fields"))
+        r["registration_fields"] = _parse_fields(r.get("registration_fields"))
     return jsonify(rows)
 
 
@@ -507,14 +516,19 @@ def create_more_service():
     fields, error = _validate_fields(b.get("fields"))
     if error:
         return jsonify({"error": error}), 400
+    registration_fields, error = _validate_fields(
+        b.get("registration_fields"), allow_empty=True
+    )
+    if error:
+        return jsonify({"error": error}), 400
 
     new_id = db.execute(
         """INSERT INTO more_services
              (name, description, category, icon, fields,
               ussd_template_mtn, ussd_template_airtel,
               registration_ussd_mtn, registration_ussd_airtel,
-              sort_order, active)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+              registration_fields, sort_order, active)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             b["name"],
             b.get("description"),
@@ -525,6 +539,7 @@ def create_more_service():
             b.get("ussd_template_airtel") or None,
             b.get("registration_ussd_mtn") or None,
             b.get("registration_ussd_airtel") or None,
+            json.dumps(registration_fields),
             int(b.get("sort_order") or 0),
             1 if b.get("active", True) else 0,
         ),
@@ -539,12 +554,18 @@ def update_more_service(sid):
     fields, error = _validate_fields(b.get("fields"))
     if error:
         return jsonify({"error": error}), 400
+    registration_fields, error = _validate_fields(
+        b.get("registration_fields"), allow_empty=True
+    )
+    if error:
+        return jsonify({"error": error}), 400
 
     db.execute(
         """UPDATE more_services SET
              name=%s, description=%s, category=%s, icon=%s, fields=%s,
              ussd_template_mtn=%s, ussd_template_airtel=%s,
              registration_ussd_mtn=%s, registration_ussd_airtel=%s,
+             registration_fields=%s,
              sort_order=%s, active=%s
            WHERE id=%s""",
         (
@@ -557,6 +578,7 @@ def update_more_service(sid):
             b.get("ussd_template_airtel") or None,
             b.get("registration_ussd_mtn") or None,
             b.get("registration_ussd_airtel") or None,
+            json.dumps(registration_fields),
             int(b.get("sort_order") or 0),
             1 if b.get("active", True) else 0,
             sid,

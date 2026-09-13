@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS more_services (
   -- registration. A service with neither set here just never shows it.
   registration_ussd_mtn    VARCHAR(255) NULL,
   registration_ussd_airtel VARCHAR(255) NULL,
+  -- Same {field1}, {field2}... shape as `fields` above, but allowed to be
+  -- empty/absent for a registration code that needs no input at all.
+  registration_fields      TEXT NULL,
   sort_order           INT NOT NULL DEFAULT 0,
   active               TINYINT(1) NOT NULL DEFAULT 1,
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

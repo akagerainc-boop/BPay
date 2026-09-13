@@ -450,20 +450,27 @@ function fieldRowHtml(f = { type: "account_number", label: "" }) {
     </div>`;
 }
 
-function collectMoreServiceFields() {
-  return Array.from(document.querySelectorAll("#field-rows .field-row")).map((row) => ({
+function collectFieldsFrom(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} .field-row`)).map((row) => ({
     type: row.querySelector(".field-type").value,
     label: row.querySelector(".field-label").value.trim(),
   }));
 }
 
+function collectMoreServiceFields() {
+  return collectFieldsFrom("field-rows");
+}
+
 // Delegated on the modal's persistent container rather than the rows
-// themselves, since rows get added/removed after the modal is already open.
+// themselves, since rows get added/removed after the modal is already
+// open. Generic over both field-row groups (main + registration) via
+// data-target, rather than one hardcoded container id.
 document.getElementById("modal-form").addEventListener("click", (e) => {
   if (e.target.classList.contains("remove-field-row")) {
     e.target.closest(".field-row").remove();
-  } else if (e.target.id === "add-field-row") {
-    document.getElementById("field-rows").insertAdjacentHTML("beforeend", fieldRowHtml());
+  } else if (e.target.classList.contains("add-field-row-btn")) {
+    document.getElementById(e.target.dataset.target)
+      .insertAdjacentHTML("beforeend", fieldRowHtml());
   }
 });
 
@@ -472,6 +479,7 @@ function moreServiceForm(s = {}) {
     .map((i) => `<option value="${i}" ${i === s.icon ? "selected" : ""}>${i}</option>`)
     .join("");
   const fields = s.fields && s.fields.length ? s.fields : [{ type: "account_number", label: "" }];
+  const registrationFields = s.registration_fields || [];
   return `
     <label>Name<input type="text" name="name" value="${escapeHtml(s.name || "")}" required></label>
     <label>Description<input type="text" name="description" value="${escapeHtml(s.description || "")}"></label>
@@ -481,7 +489,7 @@ function moreServiceForm(s = {}) {
     </label>
     <label>Input fields
       <div id="field-rows">${fields.map(fieldRowHtml).join("")}</div>
-      <button type="button" class="btn ghost small" id="add-field-row" style="margin-top:6px">+ Add field</button>
+      <button type="button" class="btn ghost small add-field-row-btn" data-target="field-rows" style="margin-top:6px">+ Add field</button>
       <span class="field-hint">
         In order — the template refers to them positionally as
         <code>{field1}</code>, <code>{field2}</code>, etc. Every value is
@@ -508,6 +516,16 @@ function moreServiceForm(s = {}) {
     <label>Airtel registration code (optional)
       <input type="text" name="registration_ussd_airtel" value="${escapeHtml(s.registration_ussd_airtel || "")}" placeholder="*185*...#">
     </label>
+    <label>Registration input fields (optional)
+      <div id="registration-field-rows">${registrationFields.map(fieldRowHtml).join("")}</div>
+      <button type="button" class="btn ghost small add-field-row-btn" data-target="registration-field-rows" style="margin-top:6px">+ Add field</button>
+      <span class="field-hint">
+        Only if the registration code above needs input (e.g. a National
+        ID) — same <code>{field1}</code>, <code>{field2}</code> convention
+        as Input fields. Leave with none added if the registration code is
+        a plain menu with nothing to fill in.
+      </span>
+    </label>
     <label>Sort order
       <input type="number" name="sort_order" value="${s.sort_order ?? 0}">
     </label>
@@ -520,6 +538,7 @@ window.editMoreService = (id) => {
   const s = moreServices.find((x) => x.id === id);
   openModal("Edit service", moreServiceForm(s), async (values) => {
     values.fields = collectMoreServiceFields();
+    values.registration_fields = collectFieldsFrom("registration-field-rows");
     await api(`/api/admin/more-services/${id}`, { method: "PUT", body: JSON.stringify(values) });
     toast("Service updated");
     loadMoreServices();
@@ -538,6 +557,7 @@ window.deleteMoreService = async (id) => {
 document.getElementById("add-more-service").addEventListener("click", () => {
   openModal("Add service", moreServiceForm(), async (values) => {
     values.fields = collectMoreServiceFields();
+    values.registration_fields = collectFieldsFrom("registration-field-rows");
     await api("/api/admin/more-services", { method: "POST", body: JSON.stringify(values) });
     toast("Service added");
     loadMoreServices();

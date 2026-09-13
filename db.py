@@ -173,6 +173,7 @@ def ensure_more_services_schema():
                  ussd_template_airtel VARCHAR(255) NULL,
                  registration_ussd_mtn    VARCHAR(255) NULL,
                  registration_ussd_airtel VARCHAR(255) NULL,
+                 registration_fields TEXT NULL,
                  sort_order         INT NOT NULL DEFAULT 0,
                  active             TINYINT(1) NOT NULL DEFAULT 1,
                  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -197,6 +198,18 @@ def ensure_more_services_schema():
                 "ALTER TABLE more_services "
                 "ADD COLUMN registration_ussd_mtn VARCHAR(255) NULL, "
                 "ADD COLUMN registration_ussd_airtel VARCHAR(255) NULL"
+            )
+        except mysql.connector.Error as exc:
+            if exc.errno != 1060:
+                raise
+        try:
+            # The registration code can need its own input too (e.g. a
+            # National ID to complete sign-up) — same {field1}, {field2}...
+            # shape as the main service, but allowed to be empty for a
+            # registration code that needs no input at all.
+            cur.execute(
+                "ALTER TABLE more_services "
+                "ADD COLUMN registration_fields TEXT NULL"
             )
         except mysql.connector.Error as exc:
             if exc.errno != 1060:
