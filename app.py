@@ -22,7 +22,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 import db
-from auth import issue_token, require_admin, verify_password
+from auth import hash_password, issue_token, require_admin, verify_password
 
 load_dotenv()
 
@@ -137,6 +137,33 @@ def login():
             "username": admin["username"],
         }
     )
+
+
+@app.post("/api/admin/bootstrap")
+def bootstrap_admin():
+    """Creates the very first admin account on a database that has none —
+    refuses outright the moment any admin row already exists, so this can
+    never be used to add a second account or take over an existing one.
+    Exists purely because a brand-new database (a fresh Aiven instance,
+    schema applied but no rows) otherwise has no way to get a first login
+    without direct DB access."""
+    existing = db.query_one("SELECT id FROM admins LIMIT 1")
+    if existing is not None:
+        return jsonify({"error": "An admin account already exists."}), 403
+
+    b = request.get_json(silent=True) or {}
+    username = (b.get("username") or "").strip()
+    password = b.get("password") or ""
+    if not username or len(password) < 6:
+        return jsonify(
+            {"error": "username and a password of 6+ characters are required"}
+        ), 400
+
+    db.execute(
+        "INSERT INTO admins (username, password_hash) VALUES (%s,%s)",
+        (username, hash_password(password)),
+    )
+    return jsonify({"ok": True}), 201
 
 
 # ------------------------------------------------ app-facing public config
