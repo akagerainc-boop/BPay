@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS ussd_templates (
                       'airtime',
                       'mokash_send',
                       'mokash_withdraw',
+                      'mokash_register',
                       'check_balance'
                     )                                          NOT NULL,
 
@@ -91,6 +92,37 @@ CREATE TABLE IF NOT EXISTS services (
   active       TINYINT(1)   NOT NULL DEFAULT 1,
   updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
                             ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------ more_services
+-- The floating-menu catalog (banks, MTN value-adds, anything else an
+-- admin wants to add) — each entry has its own admin-chosen *set* of
+-- input fields, unlike `services` above which is always account + amount.
+-- `fields` is JSON-encoded text: a list of {"type", "label"} objects,
+-- where type is one of account_number/amount/national_id/custom, and the
+-- template refers to them positionally as {field1}, {field2}, etc.
+CREATE TABLE IF NOT EXISTS more_services (
+  id                   INT AUTO_INCREMENT PRIMARY KEY,
+  name                 VARCHAR(120) NOT NULL,
+  description          TEXT NULL,
+  category             VARCHAR(60) NULL,
+  icon                 VARCHAR(60) NOT NULL DEFAULT 'receipt_long_rounded',
+  fields               TEXT NOT NULL,
+  ussd_template_mtn    VARCHAR(255) NULL,
+  ussd_template_airtel VARCHAR(255) NULL,
+  sort_order           INT NOT NULL DEFAULT 0,
+  active               TINYINT(1) NOT NULL DEFAULT 1,
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                 ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- Single-row toggle: whether the floating "more services" menu shows in
+-- the app at all. Off by default until the admin turns it on.
+CREATE TABLE IF NOT EXISTS more_services_settings (
+  id         INT PRIMARY KEY DEFAULT 1,
+  enabled    TINYINT(1) NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                       ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------- transactions

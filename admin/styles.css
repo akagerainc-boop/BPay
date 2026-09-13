@@ -289,6 +289,9 @@ tbody tr:hover { background: var(--row-hover); }
 .modal-card .checkline { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink-2); }
 .modal-card .checkline input { width: auto; margin: 0; }
 .field-hint { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.field-row .field-type { flex: 0 0 150px; }
+.field-row .field-label { flex: 1; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 .error { color: var(--error); font-size: 13px; margin: 8px 0 0; }

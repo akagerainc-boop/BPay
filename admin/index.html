@@ -40,6 +40,7 @@
       <button class="tab active" data-tab="overview">Overview</button>
       <button class="tab" data-tab="ussd">USSD codes</button>
       <button class="tab" data-tab="services">Services</button>
+      <button class="tab" data-tab="more-services">More services</button>
       <button class="tab" data-tab="fees">Fees &amp; API keys</button>
       <button class="tab" data-tab="payment-links">Payment links</button>
       <button class="tab" data-tab="announcements">Announcements</button>
@@ -122,6 +123,47 @@
       </div>
     </section>
 
+    <!-- ------------------------------------------------ more services -->
+    <section id="tab-more-services" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>More services (floating menu)</h2>
+      </div>
+      <p class="muted note">
+        Controls the floating "⋮" menu in the app — banks, MTN value-adds
+        (MoFaya, Moflex…), or anything else that isn't a fixed bill payment.
+        Unlike Services above, each entry here has its own admin-chosen set
+        of input fields (account number, amount, National ID, or a custom
+        one you name) — the USSD template refers to them in order as
+        <code>{field1}</code>, <code>{field2}</code>, etc. Every field value
+        is still digits-only before it's dialled, same as everywhere else.
+      </p>
+      <div class="card" id="more-services-settings-card">
+        <label>Show this menu in the app
+          <div class="checkline" style="margin-top:6px">
+            <input type="checkbox" id="more-services-enabled">
+            <span id="more-services-enabled-label">Disabled</span>
+          </div>
+        </label>
+        <button class="btn primary" id="more-services-settings-save">Save</button>
+      </div>
+
+      <div class="panel-head" style="margin-top:32px">
+        <h2>Catalog</h2>
+        <button class="btn primary" id="add-more-service">Add service</button>
+      </div>
+      <div class="table-wrap">
+        <table id="more-services-table">
+          <thead>
+            <tr>
+              <th>Icon</th><th>Name</th><th>Category</th><th>Fields</th>
+              <th>Networks</th><th>Order</th><th>Active</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ---------------------------------------------------------- fees -->
     <section id="tab-fees" class="tab-panel" hidden>
       <div class="panel-head">
@@ -138,15 +180,33 @@
       <div class="cards-row" id="fee-rules"></div>
 
       <div class="panel-head" style="margin-top:32px">
-        <h2>Provider API keys</h2>
+        <h2>ITEC Payment</h2>
+      </div>
+      <p class="muted note">
+        Fronts MTN Mobile Money, Airtel Money and Spenn behind a single API
+        key, and replaces the per-network provider keys below on both
+        networks the moment it's set. The key itself is never entered
+        here — it's an environment variable set directly on this backend's
+        hosting service (Render → this service → Environment →
+        <code>ITEC_API_KEY</code>), since a real payment-collection
+        credential has no business passing through a browser-facing
+        dashboard. This just shows whether it's currently active.
+      </p>
+      <div class="card" id="itec-status-card">
+        <p id="itec-status-text" class="muted">Checking…</p>
+      </div>
+
+      <div class="panel-head" style="margin-top:32px">
+        <h2>Provider API keys (fallback)</h2>
       </div>
       <p class="muted note">
         Real credentials for the MTN MoMo / Airtel Money Collections API —
         the "Request to Pay" that actually charges the fee above from the
-        user's own wallet into this company's account. This is separate
-        from USSD dialling entirely: it's a direct server-to-server call,
-        which is why it needs real credentials from MTN/Airtel's developer
-        portal. Secrets are masked here and never sent to the app.
+        user's own wallet into this company's account, used only when
+        ITEC Payment above isn't configured. This is separate from USSD
+        dialling entirely: it's a direct server-to-server call, which is
+        why it needs real credentials from MTN/Airtel's developer portal.
+        Secrets are masked here and never sent to the app.
       </p>
       <div class="cards-row" id="provider-keys"></div>
     </section>

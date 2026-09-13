@@ -140,3 +140,48 @@ def ensure_payment_link_schema():
         except mysql.connector.Error as exc:
             if exc.errno != 1060:
                 raise
+        # MODIFY (not ADD) is safe to re-run on every startup — it's just a
+        # no-op once the value is already present, unlike ADD COLUMN which
+        # errors on a second run.
+        cur.execute(
+            "ALTER TABLE ussd_templates MODIFY COLUMN transaction_type "
+            "ENUM('phone_transfer','merchant_payment','bill_payment','airtime',"
+            "'mokash_send','mokash_withdraw','mokash_register','check_balance') "
+            "NOT NULL"
+        )
+
+
+def ensure_more_services_schema():
+    """The admin-defined "more services" catalog (banks, MTN value-adds,
+    anything else an admin wants to add) behind the floating menu — its own
+    table since each entry needs an admin-chosen *set* of input fields
+    (account number / amount / national ID / a custom-named one), not the
+    fixed account+amount shape `services` already has. `fields` is stored
+    as TEXT (JSON-encoded) rather than the native JSON column type, for the
+    same portability reasons as everywhere else in this file: it reads back
+    identically regardless of the MySQL/MariaDB version behind it."""
+    with get_cursor(commit=True) as cur:
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS more_services (
+                 id                 INT AUTO_INCREMENT PRIMARY KEY,
+                 name               VARCHAR(120) NOT NULL,
+                 description        TEXT NULL,
+                 category           VARCHAR(60) NULL,
+                 icon               VARCHAR(60) NOT NULL DEFAULT 'receipt_long_rounded',
+                 fields             TEXT NOT NULL,
+                 ussd_template_mtn    VARCHAR(255) NULL,
+                 ussd_template_airtel VARCHAR(255) NULL,
+                 sort_order         INT NOT NULL DEFAULT 0,
+                 active             TINYINT(1) NOT NULL DEFAULT 1,
+                 updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                             ON UPDATE CURRENT_TIMESTAMP
+               ) ENGINE=InnoDB"""
+        )
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS more_services_settings (
+                 id      INT PRIMARY KEY DEFAULT 1,
+                 enabled TINYINT(1) NOT NULL DEFAULT 0,
+                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                     ON UPDATE CURRENT_TIMESTAMP
+               ) ENGINE=InnoDB"""
+        )

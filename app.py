@@ -8,6 +8,7 @@ The app never hardcodes carrier USSD codes; it renders whatever the admin
 has defined in `ussd_templates` and `services`.
 """
 
+import json
 import os
 import random
 import re
@@ -43,6 +44,11 @@ except Exception:  # noqa: BLE001 - a transient DB hiccup at boot must never cra
     # process on first actual use, in case this only failed because the
     # database wasn't reachable yet at boot.
     app.logger.exception("ensure_payment_link_schema failed at startup")
+
+try:
+    db.ensure_more_services_schema()
+except Exception:  # noqa: BLE001 - see the note above; same reasoning applies
+    app.logger.exception("ensure_more_services_schema failed at startup")
 
 # Placeholders an admin may use inside a USSD template. Kept here so the
 # dashboard and the app agree on exactly one vocabulary.
@@ -155,6 +161,17 @@ def app_config():
         t["completes_payment"] = bool(t["completes_payment"])
     for f in fee_rules:
         f["active"] = bool(f["active"])
+
+    more_services = db.query_all(
+        """SELECT id, name, description, category, icon, fields,
+                  ussd_template_mtn, ussd_template_airtel, sort_order
+           FROM more_services WHERE active = 1
+           ORDER BY sort_order DESC, name ASC"""
+    )
+    for s in more_services:
+        s["fields"] = _parse_fields(s.get("fields"))
+    more_services_settings = _more_services_settings()
+
     return jsonify(
         {
             "version": int(datetime.now().timestamp()),
@@ -162,6 +179,8 @@ def app_config():
             "ussd_templates": templates,
             "services": services,
             "fee_rules": fee_rules,
+            "more_services": more_services,
+            "more_services_enabled": bool(more_services_settings.get("enabled")),
         }
     )
 
@@ -408,6 +427,164 @@ def delete_service(sid):
     return jsonify({"ok": True})
 
 
+# --------------------------------------------------- more services (FAB)
+# The floating-menu catalog: banks, MTN value-adds, anything else an admin
+# wants to add — each with its own admin-chosen set of input fields, unlike
+# `services` above (which is always exactly account + amount).
+MORE_SERVICE_FIELD_TYPES = ("account_number", "amount", "national_id", "custom")
+MAX_MORE_SERVICE_FIELDS = 4
+
+
+def _parse_fields(raw):
+    try:
+        fields = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        return []
+    return fields if isinstance(fields, list) else []
+
+
+def _validate_fields(raw_fields):
+    """Returns (fields, error) — fields is the cleaned list ready to store,
+    error is a user-facing string, or None on success. Never trusts the
+    dashboard blindly: a bad field type or a missing custom label would
+    otherwise silently break the app's dynamic form."""
+    if not isinstance(raw_fields, list) or not raw_fields:
+        return None, "At least one input field is required."
+    if len(raw_fields) > MAX_MORE_SERVICE_FIELDS:
+        return None, f"No more than {MAX_MORE_SERVICE_FIELDS} input fields are supported."
+
+    cleaned = []
+    for f in raw_fields:
+        if not isinstance(f, dict):
+            return None, "Each field must be an object with a type and label."
+        ftype = f.get("type")
+        if ftype not in MORE_SERVICE_FIELD_TYPES:
+            return None, f"Unknown field type: {ftype}"
+        label = (f.get("label") or "").strip()
+        if ftype == "custom" and not label:
+            return None, "A custom field needs a label."
+        default_labels = {
+            "account_number": "Account number",
+            "amount": "Amount",
+            "national_id": "National ID",
+        }
+        cleaned.append({"type": ftype, "label": label or default_labels.get(ftype, ftype)})
+    return cleaned, None
+
+
+def _more_services_settings():
+    row = db.query_one("SELECT * FROM more_services_settings WHERE id=1")
+    if row is None:
+        db.execute("INSERT INTO more_services_settings (id, enabled) VALUES (1, 0)")
+        row = db.query_one("SELECT * FROM more_services_settings WHERE id=1")
+    return row or {}
+
+
+@app.get("/api/admin/more-services")
+@require_admin
+def list_more_services():
+    rows = db.query_all(
+        "SELECT * FROM more_services ORDER BY sort_order DESC, name"
+    )
+    for r in rows:
+        r["active"] = bool(r["active"])
+        r["fields"] = _parse_fields(r.get("fields"))
+    return jsonify(rows)
+
+
+@app.post("/api/admin/more-services")
+@require_admin
+def create_more_service():
+    b = request.get_json(silent=True) or {}
+    if not b.get("name"):
+        return jsonify({"error": "Missing: name"}), 400
+    if not b.get("ussd_template_mtn") and not b.get("ussd_template_airtel"):
+        return (
+            jsonify({"error": "Set a USSD code for MTN, Airtel, or both"}),
+            400,
+        )
+    fields, error = _validate_fields(b.get("fields"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    new_id = db.execute(
+        """INSERT INTO more_services
+             (name, description, category, icon, fields,
+              ussd_template_mtn, ussd_template_airtel, sort_order, active)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (
+            b["name"],
+            b.get("description"),
+            b.get("category") or None,
+            b.get("icon", "receipt_long_rounded"),
+            json.dumps(fields),
+            b.get("ussd_template_mtn") or None,
+            b.get("ussd_template_airtel") or None,
+            int(b.get("sort_order") or 0),
+            1 if b.get("active", True) else 0,
+        ),
+    )
+    return jsonify({"id": new_id}), 201
+
+
+@app.put("/api/admin/more-services/<int:sid>")
+@require_admin
+def update_more_service(sid):
+    b = request.get_json(silent=True) or {}
+    fields, error = _validate_fields(b.get("fields"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    db.execute(
+        """UPDATE more_services SET
+             name=%s, description=%s, category=%s, icon=%s, fields=%s,
+             ussd_template_mtn=%s, ussd_template_airtel=%s,
+             sort_order=%s, active=%s
+           WHERE id=%s""",
+        (
+            b.get("name"),
+            b.get("description"),
+            b.get("category") or None,
+            b.get("icon", "receipt_long_rounded"),
+            json.dumps(fields),
+            b.get("ussd_template_mtn") or None,
+            b.get("ussd_template_airtel") or None,
+            int(b.get("sort_order") or 0),
+            1 if b.get("active", True) else 0,
+            sid,
+        ),
+    )
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/admin/more-services/<int:sid>")
+@require_admin
+def delete_more_service(sid):
+    db.execute("DELETE FROM more_services WHERE id=%s", (sid,))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/more-services-settings")
+@require_admin
+def get_more_services_settings():
+    s = _more_services_settings()
+    s["enabled"] = bool(s.get("enabled"))
+    return jsonify(s)
+
+
+@app.put("/api/admin/more-services-settings")
+@require_admin
+def update_more_services_settings():
+    b = request.get_json(silent=True) or {}
+    db.execute(
+        """INSERT INTO more_services_settings (id, enabled)
+           VALUES (1, %s)
+           ON DUPLICATE KEY UPDATE enabled=VALUES(enabled)""",
+        (1 if b.get("enabled") else 0,),
+    )
+    return jsonify({"ok": True})
+
+
 # ----------------------------------------------------- admin: fee rules
 # A disclosure rule, not a payment mechanism: BPay has no rail of its own to
 # collect a fee through, so this only controls the in-app notice shown
@@ -580,18 +757,54 @@ def update_provider_key(network):
     return jsonify({"ok": True})
 
 
+@app.get("/api/admin/itec-status")
+@require_admin
+def itec_status():
+    """Whether ITEC Payment is active — never the key itself. It's set as
+    an environment variable directly on the hosting service (Render →
+    this service → Environment → ITEC_API_KEY), specifically so a real
+    payment-collection credential never has to pass through this
+    browser-facing dashboard at all. When configured, it replaces the
+    per-network provider keys above for every fee collection, on both
+    networks."""
+    return jsonify({"configured": _using_itec()})
+
+
 # ----------------------------------------------------- fee collections
 # The real thing the fee popup leads to: an actual Request-to-Pay against
 # MTN MoMo or Airtel Money, charging the user's own wallet and paying it
 # into the company's account behind the credentials above. Distinct from
 # `transactions`, which is the user's own USSD payment history — this is
 # the company's ledger of fee money it has actually requested.
+def _itec_api_key():
+    """Set directly on the Render service (Environment tab) rather than
+    typed into this dashboard — a real payment-collection credential has
+    no business living in a database an admin's browser talks to. Returns
+    None when it isn't configured, which is exactly what makes
+    `_using_itec()` fall back to the per-network provider_keys flow below,
+    so nothing breaks for anyone who hasn't set it yet."""
+    return (os.getenv("ITEC_API_KEY") or "").strip() or None
+
+
+def _using_itec():
+    return _itec_api_key() is not None
+
+
 def _provider_config(network):
+    if _using_itec():
+        return {"key": _itec_api_key()}
     row = db.query_one("SELECT * FROM provider_keys WHERE network=%s", (network,))
     return row or {}
 
 
 def _provider_client(network):
+    # ITEC fronts MTN, Airtel and Spenn behind one API — once its key is
+    # set, it replaces both network-specific clients below for every fee
+    # collection, regardless of which network the payer is on.
+    if _using_itec():
+        import itec_client
+
+        return itec_client
     if network == "mtn":
         import momo_client
 
@@ -621,7 +834,14 @@ def _start_fee_collection(
         raise ValueError("amount must be positive")
 
     config = _provider_config(network)
-    fields = _PROVIDER_FIELDS.get(network, [])
+    # ITEC's config shape is just {"key": ...} regardless of network — the
+    # per-network field list below only applies to the momo/airtel
+    # fallback, so it would otherwise always (wrongly) call ITEC
+    # unconfigured.
+    if _using_itec():
+        fields = ["key"]
+    else:
+        fields = _PROVIDER_FIELDS.get(network, [])
     if not all(config.get(f) for f in fields):
         raise LookupError(
             f"{network.upper()} isn't fully configured yet — an administrator "

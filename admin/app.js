@@ -15,6 +15,7 @@ const TRANSACTION_TYPES = [
   ["airtime", "Airtime"],
   ["mokash_send", "MoKash — send"],
   ["mokash_withdraw", "MoKash — withdraw to SIM"],
+  ["mokash_register", "MoKash — create account"],
   ["check_balance", "Check balance"],
 ];
 
@@ -134,8 +135,9 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.getElementById(`tab-${tab.dataset.tab}`).hidden = false;
     if (tab.dataset.tab === "transactions") loadTransactions();
     if (tab.dataset.tab === "overview") loadOverview();
-    if (tab.dataset.tab === "fees") { loadFeeRules(); loadProviderKeys(); }
+    if (tab.dataset.tab === "fees") { loadFeeRules(); loadItecStatus(); loadProviderKeys(); }
     if (tab.dataset.tab === "payment-links") { loadLinkSettings(); loadPaymentLinks(); }
+    if (tab.dataset.tab === "more-services") { loadMoreServicesSettings(); loadMoreServices(); }
     if (tab.dataset.tab === "announcements") loadAnnouncements();
     if (tab.dataset.tab === "users") loadUsers();
   });
@@ -361,6 +363,175 @@ document.getElementById("add-service").addEventListener("click", () => {
   });
 });
 
+/* ---------------------------------------------------- more services */
+// The floating-menu catalog — same shape as Services above, except each
+// entry has its own admin-chosen *set* of input fields instead of a fixed
+// account+amount, so the modal needs a small repeatable field-row builder
+// on top of the generic form-collector `modal-save` already provides.
+let moreServices = [];
+const MORE_SERVICE_FIELD_TYPES = [
+  ["account_number", "Account number"],
+  ["amount", "Amount"],
+  ["national_id", "National ID"],
+  ["custom", "Custom…"],
+];
+
+async function loadMoreServicesSettings() {
+  try {
+    const s = await api("/api/admin/more-services-settings");
+    document.getElementById("more-services-enabled").checked = !!s.enabled;
+    document.getElementById("more-services-enabled-label").textContent =
+      s.enabled ? "Enabled" : "Disabled";
+  } catch (err) { toast(err.message); }
+}
+
+document.getElementById("more-services-enabled").addEventListener("change", (e) => {
+  document.getElementById("more-services-enabled-label").textContent =
+    e.target.checked ? "Enabled" : "Disabled";
+});
+
+document.getElementById("more-services-settings-save").addEventListener("click", async () => {
+  try {
+    await api("/api/admin/more-services-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: document.getElementById("more-services-enabled").checked,
+      }),
+    });
+    toast("Saved");
+  } catch (err) { toast(err.message); }
+});
+
+async function loadMoreServices() {
+  try {
+    moreServices = await api("/api/admin/more-services");
+    renderMoreServices();
+  } catch (err) { toast(err.message); }
+}
+
+function renderMoreServices() {
+  const tbody = document.querySelector("#more-services-table tbody");
+  if (!moreServices.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">No services yet.</td></tr>`;
+    return;
+  }
+  const nets = (s) => {
+    const has = [];
+    if (s.ussd_template_mtn) has.push("MTN");
+    if (s.ussd_template_airtel) has.push("Airtel");
+    return has.length ? has.join(" + ") : "—";
+  };
+  const fieldsLabel = (s) => (s.fields || []).map((f) => f.label).join(", ") || "—";
+  tbody.innerHTML = moreServices.map((s) => `
+    <tr>
+      <td class="mono">${escapeHtml(s.icon)}</td>
+      <td><strong>${escapeHtml(s.name)}</strong><br><span class="muted">${escapeHtml(s.description || "")}</span></td>
+      <td>${escapeHtml(s.category || "—")}</td>
+      <td>${escapeHtml(fieldsLabel(s))}</td>
+      <td>${nets(s)}</td>
+      <td>${s.sort_order}</td>
+      <td><span class="pill ${s.active ? "on" : "off"}">${s.active ? "Active" : "Off"}</span></td>
+      <td><div class="row-actions">
+        <button class="btn ghost small" onclick="editMoreService(${s.id})">Edit</button>
+        <button class="btn danger small" onclick="deleteMoreService(${s.id})">Delete</button>
+      </div></td>
+    </tr>`).join("");
+}
+
+function fieldRowHtml(f = { type: "account_number", label: "" }) {
+  const opts = MORE_SERVICE_FIELD_TYPES
+    .map(([v, l]) => `<option value="${v}" ${v === f.type ? "selected" : ""}>${l}</option>`)
+    .join("");
+  return `
+    <div class="field-row">
+      <select class="field-type">${opts}</select>
+      <input type="text" class="field-label" placeholder="Label (required for Custom)" value="${escapeHtml(f.label || "")}">
+      <button type="button" class="btn ghost small remove-field-row">✕</button>
+    </div>`;
+}
+
+function collectMoreServiceFields() {
+  return Array.from(document.querySelectorAll("#field-rows .field-row")).map((row) => ({
+    type: row.querySelector(".field-type").value,
+    label: row.querySelector(".field-label").value.trim(),
+  }));
+}
+
+// Delegated on the modal's persistent container rather than the rows
+// themselves, since rows get added/removed after the modal is already open.
+document.getElementById("modal-form").addEventListener("click", (e) => {
+  if (e.target.classList.contains("remove-field-row")) {
+    e.target.closest(".field-row").remove();
+  } else if (e.target.id === "add-field-row") {
+    document.getElementById("field-rows").insertAdjacentHTML("beforeend", fieldRowHtml());
+  }
+});
+
+function moreServiceForm(s = {}) {
+  const iconOpts = FLUTTER_ICONS
+    .map((i) => `<option value="${i}" ${i === s.icon ? "selected" : ""}>${i}</option>`)
+    .join("");
+  const fields = s.fields && s.fields.length ? s.fields : [{ type: "account_number", label: "" }];
+  return `
+    <label>Name<input type="text" name="name" value="${escapeHtml(s.name || "")}" required></label>
+    <label>Description<input type="text" name="description" value="${escapeHtml(s.description || "")}"></label>
+    <label>Category<input type="text" name="category" value="${escapeHtml(s.category || "")}" placeholder="Bank, MTN Service…"></label>
+    <label>Flutter icon
+      <select name="icon">${iconOpts}</select>
+    </label>
+    <label>Input fields
+      <div id="field-rows">${fields.map(fieldRowHtml).join("")}</div>
+      <button type="button" class="btn ghost small" id="add-field-row" style="margin-top:6px">+ Add field</button>
+      <span class="field-hint">
+        In order — the template refers to them positionally as
+        <code>{field1}</code>, <code>{field2}</code>, etc. Every value is
+        digits-only before it's dialled.
+      </span>
+    </label>
+    <label>MTN USSD template
+      <input type="text" name="ussd_template_mtn" value="${escapeHtml(s.ussd_template_mtn || "")}" placeholder="*182*...*{field1}*{field2}#">
+      <span class="field-hint">Leave blank if not offered to MTN users.</span>
+    </label>
+    <label>Airtel USSD template
+      <input type="text" name="ussd_template_airtel" value="${escapeHtml(s.ussd_template_airtel || "")}" placeholder="*185*...#">
+      <span class="field-hint">Leave blank if not offered to Airtel users.</span>
+    </label>
+    <label>Sort order
+      <input type="number" name="sort_order" value="${s.sort_order ?? 0}">
+    </label>
+    <label class="checkline">
+      <input type="checkbox" name="active" ${s.active !== false ? "checked" : ""}> Active
+    </label>`;
+}
+
+window.editMoreService = (id) => {
+  const s = moreServices.find((x) => x.id === id);
+  openModal("Edit service", moreServiceForm(s), async (values) => {
+    values.fields = collectMoreServiceFields();
+    await api(`/api/admin/more-services/${id}`, { method: "PUT", body: JSON.stringify(values) });
+    toast("Service updated");
+    loadMoreServices();
+  });
+};
+
+window.deleteMoreService = async (id) => {
+  if (!confirm("Delete this service? It disappears from the app.")) return;
+  try {
+    await api(`/api/admin/more-services/${id}`, { method: "DELETE" });
+    toast("Service deleted");
+    loadMoreServices();
+  } catch (err) { toast(err.message); }
+};
+
+document.getElementById("add-more-service").addEventListener("click", () => {
+  openModal("Add service", moreServiceForm(), async (values) => {
+    values.fields = collectMoreServiceFields();
+    await api("/api/admin/more-services", { method: "POST", body: JSON.stringify(values) });
+    toast("Service added");
+    loadMoreServices();
+  });
+});
+
 /* --------------------------------------------------------- fee rules */
 const WINDOW_LABELS = { day: "day", week: "week", month: "month", year: "year" };
 
@@ -405,6 +576,20 @@ window.saveFeeRule = async (network) => {
     toast(`${network.toUpperCase()} fee rule saved`);
   } catch (err) { toast(err.message); }
 };
+
+/* --------------------------------------------------------- ITEC status */
+async function loadItecStatus() {
+  const el = document.getElementById("itec-status-text");
+  try {
+    const s = await api("/api/admin/itec-status");
+    el.textContent = s.configured
+      ? "✅ Active — ITEC_API_KEY is set. Every fee collection on both networks runs through ITEC Payment."
+      : "⚪ Not configured — set ITEC_API_KEY on Render to activate it. Using the per-network provider keys below for now.";
+    el.className = s.configured ? "" : "muted";
+  } catch (err) {
+    el.textContent = "Could not check status.";
+  }
+}
 
 /* ----------------------------------------------------- provider keys */
 // What each network's Collections API actually needs — see
