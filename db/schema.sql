@@ -110,6 +110,12 @@ CREATE TABLE IF NOT EXISTS more_services (
   fields               TEXT NOT NULL,
   ussd_template_mtn    VARCHAR(255) NULL,
   ussd_template_airtel VARCHAR(255) NULL,
+  -- Optional one-time "register your SIM for this service" code, separate
+  -- from the main template above — shown as its own button in the app
+  -- when the user hasn't registered yet, same pattern as MoKash
+  -- registration. A service with neither set here just never shows it.
+  registration_ussd_mtn    VARCHAR(255) NULL,
+  registration_ussd_airtel VARCHAR(255) NULL,
   sort_order           INT NOT NULL DEFAULT 0,
   active               TINYINT(1) NOT NULL DEFAULT 1,
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

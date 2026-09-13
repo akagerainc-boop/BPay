@@ -164,7 +164,8 @@ def app_config():
 
     more_services = db.query_all(
         """SELECT id, name, description, category, icon, fields,
-                  ussd_template_mtn, ussd_template_airtel, sort_order
+                  ussd_template_mtn, ussd_template_airtel,
+                  registration_ussd_mtn, registration_ussd_airtel, sort_order
            FROM more_services WHERE active = 1
            ORDER BY sort_order DESC, name ASC"""
     )
@@ -510,8 +511,10 @@ def create_more_service():
     new_id = db.execute(
         """INSERT INTO more_services
              (name, description, category, icon, fields,
-              ussd_template_mtn, ussd_template_airtel, sort_order, active)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+              ussd_template_mtn, ussd_template_airtel,
+              registration_ussd_mtn, registration_ussd_airtel,
+              sort_order, active)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             b["name"],
             b.get("description"),
@@ -520,6 +523,8 @@ def create_more_service():
             json.dumps(fields),
             b.get("ussd_template_mtn") or None,
             b.get("ussd_template_airtel") or None,
+            b.get("registration_ussd_mtn") or None,
+            b.get("registration_ussd_airtel") or None,
             int(b.get("sort_order") or 0),
             1 if b.get("active", True) else 0,
         ),
@@ -539,6 +544,7 @@ def update_more_service(sid):
         """UPDATE more_services SET
              name=%s, description=%s, category=%s, icon=%s, fields=%s,
              ussd_template_mtn=%s, ussd_template_airtel=%s,
+             registration_ussd_mtn=%s, registration_ussd_airtel=%s,
              sort_order=%s, active=%s
            WHERE id=%s""",
         (
@@ -549,6 +555,8 @@ def update_more_service(sid):
             json.dumps(fields),
             b.get("ussd_template_mtn") or None,
             b.get("ussd_template_airtel") or None,
+            b.get("registration_ussd_mtn") or None,
+            b.get("registration_ussd_airtel") or None,
             int(b.get("sort_order") or 0),
             1 if b.get("active", True) else 0,
             sid,

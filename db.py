@@ -171,6 +171,8 @@ def ensure_more_services_schema():
                  fields             TEXT NOT NULL,
                  ussd_template_mtn    VARCHAR(255) NULL,
                  ussd_template_airtel VARCHAR(255) NULL,
+                 registration_ussd_mtn    VARCHAR(255) NULL,
+                 registration_ussd_airtel VARCHAR(255) NULL,
                  sort_order         INT NOT NULL DEFAULT 0,
                  active             TINYINT(1) NOT NULL DEFAULT 1,
                  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -185,3 +187,17 @@ def ensure_more_services_schema():
                                      ON UPDATE CURRENT_TIMESTAMP
                ) ENGINE=InnoDB"""
         )
+        try:
+            # Lets a service offer a one-time "register your SIM for this
+            # service" code, separate from the main template — the same
+            # pattern MoKash registration already uses, generalised to any
+            # more-service. Optional: a service with neither column set
+            # just never shows the register button.
+            cur.execute(
+                "ALTER TABLE more_services "
+                "ADD COLUMN registration_ussd_mtn VARCHAR(255) NULL, "
+                "ADD COLUMN registration_ussd_airtel VARCHAR(255) NULL"
+            )
+        except mysql.connector.Error as exc:
+            if exc.errno != 1060:
+                raise

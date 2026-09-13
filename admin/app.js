@@ -496,6 +496,18 @@ function moreServiceForm(s = {}) {
       <input type="text" name="ussd_template_airtel" value="${escapeHtml(s.ussd_template_airtel || "")}" placeholder="*185*...#">
       <span class="field-hint">Leave blank if not offered to Airtel users.</span>
     </label>
+    <label>MTN registration code (optional)
+      <input type="text" name="registration_ussd_mtn" value="${escapeHtml(s.registration_ussd_mtn || "")}" placeholder="*182*...#">
+      <span class="field-hint">
+        A one-time "register your SIM for this service" code, separate from
+        the template above — the app shows a Register button for anyone
+        who hasn't yet. Leave blank if this service needs no registration,
+        or the user is expected to already have an account.
+      </span>
+    </label>
+    <label>Airtel registration code (optional)
+      <input type="text" name="registration_ussd_airtel" value="${escapeHtml(s.registration_ussd_airtel || "")}" placeholder="*185*...#">
+    </label>
     <label>Sort order
       <input type="number" name="sort_order" value="${s.sort_order ?? 0}">
     </label>
