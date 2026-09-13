@@ -705,8 +705,6 @@ async function loadLinkSettings() {
     const s = await api("/api/admin/payment-link-settings");
     document.getElementById("link-active").checked = !!s.active;
     document.getElementById("link-active-label").textContent = s.active ? "Enabled" : "Disabled";
-    document.getElementById("link-domain").value = s.app_domain || "";
-    document.getElementById("link-fingerprint").value = s.sha256_fingerprint || "";
     document.getElementById("link-play-store").value = s.play_store_url || "";
     document.getElementById("link-fee-amount").value = s.fee_amount ?? 0;
     document.getElementById("link-fee-threshold").value = s.fee_threshold ?? 5;
@@ -720,8 +718,6 @@ document.getElementById("link-active").addEventListener("change", (e) => {
 document.getElementById("link-settings-save").addEventListener("click", async () => {
   const body = {
     active: document.getElementById("link-active").checked,
-    app_domain: document.getElementById("link-domain").value.trim(),
-    sha256_fingerprint: document.getElementById("link-fingerprint").value.trim(),
     play_store_url: document.getElementById("link-play-store").value.trim(),
     fee_amount: Number(document.getElementById("link-fee-amount").value || 0),
     fee_threshold: Number(document.getElementById("link-fee-threshold").value || 5),

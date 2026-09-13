@@ -1077,15 +1077,17 @@ def _generate_link_code():
 
 _schema_retried = False
 
-# Built in so App Links work without the admin having to find and paste
-# anything — the debug cert (stable, since it's generated once by
-# `gradlew signingReport` and never changes) plus the three certificates
-# Google Play Console's App integrity page lists for the real release
-# (it hands out several at once: the classical signing cert, plus two more
-# for its hybrid/post-quantum transition). Only used when the admin hasn't
-# saved a value of their own in the dashboard — that field still overrides
-# this the moment anything is typed into it, so a re-signed app or a
-# corrected fingerprint never needs a code change to fix.
+# Built into the code rather than admin-configurable — App Links needs the
+# domain and cert fingerprints to exactly match what's actually signed and
+# actually deployed, which is a code-level fact, not something an admin
+# should be retyping into a dashboard. The debug cert (stable, since it's
+# generated once by `gradlew signingReport` and never changes) plus the
+# three certificates Google Play Console's App integrity page lists for the
+# real release (it hands out several at once: the classical signing cert,
+# plus two more for its hybrid/post-quantum transition — re-verified
+# directly against Play Console). A re-signed app or a corrected
+# fingerprint means editing these constants and redeploying, not a
+# dashboard field.
 _DEFAULT_APP_DOMAIN = "bpay-backend-cmrn.onrender.com"
 _DEFAULT_SHA256_FINGERPRINT = (
     "A9:82:07:51:E0:86:71:E1:4B:45:B1:FB:43:B8:75:0C:C2:C1:2F:B7:6D:95:41:3E:05:8E:13:5E:70:A0:9F:C1,"
@@ -1121,10 +1123,10 @@ def _link_settings():
         )
         row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
     row = row or {}
-    if not (row.get("app_domain") or "").strip():
-        row["app_domain"] = _DEFAULT_APP_DOMAIN
-    if not (row.get("sha256_fingerprint") or "").strip():
-        row["sha256_fingerprint"] = _DEFAULT_SHA256_FINGERPRINT
+    # Always the built-in constants — no admin override for these two, see
+    # the note above.
+    row["app_domain"] = _DEFAULT_APP_DOMAIN
+    row["sha256_fingerprint"] = _DEFAULT_SHA256_FINGERPRINT
     return row
 
 
@@ -1446,20 +1448,19 @@ def update_link_settings():
     if fee_amount < 0 or fee_threshold < 1:
         return jsonify({"error": "fee_amount must be >= 0 and fee_threshold >= 1"}), 400
 
+    # app_domain and sha256_fingerprint are no longer admin-editable — see
+    # the constants above _link_settings() — so this only ever touches the
+    # fields the dashboard actually still exposes.
     db.execute(
         """INSERT INTO payment_link_settings
-             (id, app_domain, play_store_url, sha256_fingerprint, fee_amount,
-              fee_threshold, active)
-           VALUES (1,%s,%s,%s,%s,%s,%s)
+             (id, play_store_url, fee_amount, fee_threshold, active)
+           VALUES (1,%s,%s,%s,%s)
            ON DUPLICATE KEY UPDATE
-             app_domain=VALUES(app_domain), play_store_url=VALUES(play_store_url),
-             sha256_fingerprint=VALUES(sha256_fingerprint),
+             play_store_url=VALUES(play_store_url),
              fee_amount=VALUES(fee_amount), fee_threshold=VALUES(fee_threshold),
              active=VALUES(active)""",
         (
-            (b.get("app_domain") or "").strip() or None,
             (b.get("play_store_url") or "").strip() or None,
-            (b.get("sha256_fingerprint") or "").strip() or None,
             fee_amount,
             fee_threshold,
             1 if b.get("active") else 0,

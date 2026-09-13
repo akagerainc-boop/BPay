@@ -221,10 +221,10 @@
         Controls the "Generate payment link" feature in the app — a user
         shares a BPay link, and whoever taps it opens the app with the
         amount and recipient already filled in and the dial already
-        started. The domain below must actually serve
-        <code>/.well-known/assetlinks.json</code> (this backend does, once
-        a fingerprint is set) for Android to open links in the app instead
-        of a browser — see the note under Domain.
+        started. The domain and Android signing certificate that make
+        <code>/.well-known/assetlinks.json</code> work are built into the
+        backend itself now, not set here — they're a fact about how the app
+        is signed and deployed, not something to retype on every release.
       </p>
       <div class="card" id="link-settings-card">
         <label>Enable payment links for users
@@ -232,32 +232,6 @@
             <input type="checkbox" id="link-active">
             <span id="link-active-label">Disabled</span>
           </div>
-        </label>
-        <label>Domain
-          <input type="text" id="link-domain" placeholder="bpay-backend-cmrn.onrender.com">
-          <span class="field-hint">
-            Links look like https://&lt;domain&gt;/pay/&lt;code&gt;. Leave
-            blank to use this server's own address. A custom domain needs
-            its own HTTPS certificate and must proxy straight through to
-            this backend (including /.well-known/assetlinks.json) — the
-            app's Android manifest also has to list this exact domain,
-            which means a new build after changing it.
-          </span>
-        </label>
-        <label>Android signing certificate SHA-256 fingerprint(s)
-          <input type="text" id="link-fingerprint" placeholder="AA:BB:CC:…, DD:EE:FF:…">
-          <span class="field-hint">
-            Required for Android to trust this domain as the app's own —
-            without it, every link opens in a browser instead of BPay.
-            Paste as many as apply, comma-separated — not just one: the
-            debug cert from a locally-built test app, plus every cert
-            Google Play Console's App integrity page lists for the real
-            release (it now hands out several at once — one for the
-            current classical signing scheme and one or two more for its
-            hybrid/post-quantum transition — extra ones here never cause
-            harm, Android just checks whether the app's actual cert
-            matches any entry in the list).
-          </span>
         </label>
         <label>Google Play Store URL
           <input type="text" id="link-play-store" placeholder="https://play.google.com/store/apps/details?id=com.akagerainc.bpay">
