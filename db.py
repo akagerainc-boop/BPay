@@ -214,3 +214,23 @@ def ensure_more_services_schema():
         except mysql.connector.Error as exc:
             if exc.errno != 1060:
                 raise
+
+
+def ensure_app_update_schema():
+    """Force-update history: every version an admin has pushed as a
+    requirement, newest row = the currently-required one. Also backfills
+    `devices.app_version` writes to have somewhere to record it — that
+    column already existed in `devices` from the original schema but
+    nothing ever wrote to it until the app started reporting its own
+    version on every /api/config call."""
+    with get_cursor(commit=True) as cur:
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS app_updates (
+                 id             INT AUTO_INCREMENT PRIMARY KEY,
+                 version_code   INT          NOT NULL,
+                 version_name   VARCHAR(32)  NULL,
+                 message        TEXT         NOT NULL,
+                 play_store_url VARCHAR(500) NOT NULL,
+                 created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+               ) ENGINE=InnoDB"""
+        )

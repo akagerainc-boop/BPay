@@ -139,6 +139,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
     if (tab.dataset.tab === "payment-links") { loadLinkSettings(); loadPaymentLinks(); }
     if (tab.dataset.tab === "more-services") { loadMoreServicesSettings(); loadMoreServices(); }
     if (tab.dataset.tab === "announcements") loadAnnouncements();
+    if (tab.dataset.tab === "app-update") loadAppUpdates();
     if (tab.dataset.tab === "users") loadUsers();
   });
 });
@@ -869,13 +870,67 @@ window.resendAnnouncement = async (id, btn) => {
   }
 };
 
+/* -------------------------------------------------------- app update */
+document.getElementById("upd-push").addEventListener("click", async () => {
+  const versionCode = document.getElementById("upd-version-code").value.trim();
+  const versionName = document.getElementById("upd-version-name").value.trim();
+  const message = document.getElementById("upd-message").value.trim();
+  const playStoreUrl = document.getElementById("upd-play-store-url").value.trim();
+  if (!versionCode || !message || !playStoreUrl) {
+    toast("Version code, message and Play Store link are required");
+    return;
+  }
+
+  const btn = document.getElementById("upd-push");
+  btn.disabled = true;
+  try {
+    await api("/api/admin/app-updates", {
+      method: "POST",
+      body: JSON.stringify({
+        version_code: Number(versionCode),
+        version_name: versionName,
+        message,
+        play_store_url: playStoreUrl,
+      }),
+    });
+    toast("Update pushed — users below this version code will now be prompted");
+    document.getElementById("upd-version-code").value = "";
+    document.getElementById("upd-version-name").value = "";
+    document.getElementById("upd-play-store-url").value = "";
+    loadAppUpdates();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function loadAppUpdates() {
+  try {
+    const rows = await api("/api/admin/app-updates");
+    const tbody = document.querySelector("#app-updates-table tbody");
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">No updates pushed yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((u) => `
+      <tr>
+        <td>${escapeHtml(u.created_at)}</td>
+        <td>${u.version_code}</td>
+        <td>${u.version_name ? escapeHtml(u.version_name) : "—"}</td>
+        <td>${escapeHtml((u.message || "").slice(0, 80))}${(u.message || "").length > 80 ? "…" : ""}</td>
+        <td><a href="${escapeHtml(u.play_store_url)}" target="_blank" rel="noopener">Open</a></td>
+      </tr>`).join("");
+  } catch (err) { toast(err.message); }
+}
+
 /* ------------------------------------------------------------- users */
 async function loadUsers() {
   try {
     const rows = await api("/api/admin/users");
     const tbody = document.querySelector("#users-table tbody");
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty">No devices yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="empty">No devices yet.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((u) => `
@@ -884,6 +939,7 @@ async function loadUsers() {
         <td>${u.phone ? escapeHtml(u.phone) : `<span class="muted">Not shared</span>`}</td>
         <td>${u.sim_network ? escapeHtml(u.sim_network.toUpperCase()) : "—"}</td>
         <td><span class="pill ${u.has_push_token ? "on" : "off"}">${u.has_push_token ? "On" : "Off"}</span></td>
+        <td>${u.app_version ? escapeHtml(String(u.app_version)) : "—"}</td>
         <td>${u.transaction_count}</td>
         <td>${u.successful_count}</td>
         <td>${u.failed_count > 0

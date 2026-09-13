@@ -50,6 +50,11 @@ try:
 except Exception:  # noqa: BLE001 - see the note above; same reasoning applies
     app.logger.exception("ensure_more_services_schema failed at startup")
 
+try:
+    db.ensure_app_update_schema()
+except Exception:  # noqa: BLE001 - see the note above; same reasoning applies
+    app.logger.exception("ensure_app_update_schema failed at startup")
+
 # Placeholders an admin may use inside a USSD template. Kept here so the
 # dashboard and the app agree on exactly one vocabulary.
 PLACEHOLDERS = ["recipient", "amount", "code", "account"]
@@ -175,6 +180,37 @@ def app_config():
         s["registration_fields"] = _parse_fields(s.get("registration_fields"))
     more_services_settings = _more_services_settings()
 
+    # Records this device's own reported version, so the admin dashboard's
+    # Users tab can show who has/hasn't updated. Best-effort: a device that
+    # never passes these query params (an old install that predates this)
+    # just never gets a row here, which is fine — it shows blank rather
+    # than breaking anything.
+    device_id = (request.args.get("device_id") or "").strip()
+    version_code = request.args.get("version_code")
+    if device_id and version_code is not None:
+        try:
+            db.execute(
+                """INSERT INTO devices (device_id, app_version)
+                   VALUES (%s,%s)
+                   ON DUPLICATE KEY UPDATE app_version=VALUES(app_version)""",
+                (device_id, str(version_code)),
+            )
+        except Exception:  # noqa: BLE001 - never let a check-in hiccup break /api/config
+            app.logger.exception("device check-in failed")
+
+    latest_update = db.query_one(
+        "SELECT version_code, message, play_store_url "
+        "FROM app_updates ORDER BY id DESC LIMIT 1"
+    )
+    force_update = None
+    if latest_update is not None:
+        try:
+            device_version = int(version_code) if version_code is not None else 0
+        except (TypeError, ValueError):
+            device_version = 0
+        if device_version < latest_update["version_code"]:
+            force_update = latest_update
+
     return jsonify(
         {
             "version": int(datetime.now().timestamp()),
@@ -184,6 +220,7 @@ def app_config():
             "fee_rules": fee_rules,
             "more_services": more_services,
             "more_services_enabled": bool(more_services_settings.get("enabled")),
+            "force_update": force_update,
         }
     )
 
@@ -615,6 +652,41 @@ def update_more_services_settings():
     return jsonify({"ok": True})
 
 
+# ------------------------------------------------------ admin: app updates
+# Force-update: the newest row here is what every device's own reported
+# version gets compared against in /api/config. Pushing a new one is what
+# makes the blocking "update to continue" popup start appearing in the app.
+@app.get("/api/admin/app-updates")
+@require_admin
+def list_app_updates():
+    rows = db.query_all("SELECT * FROM app_updates ORDER BY id DESC")
+    for r in rows:
+        if r.get("created_at") is not None:
+            r["created_at"] = r["created_at"].isoformat() + "Z"
+    return jsonify(rows)
+
+
+@app.post("/api/admin/app-updates")
+@require_admin
+def push_app_update():
+    b = request.get_json(silent=True) or {}
+    try:
+        version_code = int(b.get("version_code"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "version_code must be a whole number"}), 400
+    message = (b.get("message") or "").strip()
+    play_store_url = (b.get("play_store_url") or "").strip()
+    if not message or not play_store_url:
+        return jsonify({"error": "message and play_store_url are required"}), 400
+
+    db.execute(
+        """INSERT INTO app_updates (version_code, version_name, message, play_store_url)
+           VALUES (%s,%s,%s,%s)""",
+        (version_code, (b.get("version_name") or "").strip() or None, message, play_store_url),
+    )
+    return jsonify({"ok": True}), 201
+
+
 # ----------------------------------------------------- admin: fee rules
 # A disclosure rule, not a payment mechanism: BPay has no rail of its own to
 # collect a fee through, so this only controls the in-app notice shown
@@ -1005,6 +1077,23 @@ def _generate_link_code():
 
 _schema_retried = False
 
+# Built in so App Links work without the admin having to find and paste
+# anything — the debug cert (stable, since it's generated once by
+# `gradlew signingReport` and never changes) plus the three certificates
+# Google Play Console's App integrity page lists for the real release
+# (it hands out several at once: the classical signing cert, plus two more
+# for its hybrid/post-quantum transition). Only used when the admin hasn't
+# saved a value of their own in the dashboard — that field still overrides
+# this the moment anything is typed into it, so a re-signed app or a
+# corrected fingerprint never needs a code change to fix.
+_DEFAULT_APP_DOMAIN = "bpay-backend-cmrn.onrender.com"
+_DEFAULT_SHA256_FINGERPRINT = (
+    "A9:82:07:51:E0:86:71:E1:4B:45:B1:FB:43:B8:75:0C:C2:C1:2F:B7:6D:95:41:3E:05:8E:13:5E:70:A0:9F:C1,"
+    "77:F7:0E:B0:24:47:16:60:CB:61:86:2D:34:68:B7:08:61:BF:BF:C4:9A:C0:2A:9F:5D:D9:23:5C:63:7F:89:55,"
+    "A8:2D:D5:D2:25:E6:F9:45:27:0C:B4:54:C4:45:67:B0:4F:E7:BD:41:D9:BE:74:4A:F4:CC:EF:B8:15:8C:BD:97,"
+    "B4:F6:6A:C4:A4:C3:A2:3F:2E:21:CD:2C:8C:34:BE:C6:2F:91:E1:C3:87:3B:9B:70:6E:28:8E:A6:D2:79:9C:81"
+)
+
 
 def _link_settings():
     global _schema_retried
@@ -1031,7 +1120,12 @@ def _link_settings():
             "INSERT INTO payment_link_settings (id, active) VALUES (1, 0)"
         )
         row = db.query_one("SELECT * FROM payment_link_settings WHERE id=1")
-    return row or {}
+    row = row or {}
+    if not (row.get("app_domain") or "").strip():
+        row["app_domain"] = _DEFAULT_APP_DOMAIN
+    if not (row.get("sha256_fingerprint") or "").strip():
+        row["sha256_fingerprint"] = _DEFAULT_SHA256_FINGERPRINT
+    return row
 
 
 def _link_url(code, settings=None):
@@ -1552,6 +1646,10 @@ def admin_transactions():
 @require_admin
 def list_users():
     tokens = {r["device_id"]: r for r in db.query_all("SELECT * FROM device_tokens")}
+    versions = {
+        r["device_id"]: r["app_version"]
+        for r in db.query_all("SELECT device_id, app_version FROM devices")
+    }
     activity = {
         r["device_id"]: r
         for r in db.query_all(
@@ -1573,7 +1671,7 @@ def list_users():
     }
 
     users = []
-    for device_id in set(tokens) | set(activity):
+    for device_id in set(tokens) | set(activity) | set(versions):
         token_row = tokens.get(device_id, {})
         tx_row = activity.get(device_id, {})
         users.append(
@@ -1582,6 +1680,7 @@ def list_users():
                 "phone": tx_row.get("phone"),
                 "sim_network": tx_row.get("sim_network"),
                 "platform": token_row.get("platform"),
+                "app_version": versions.get(device_id),
                 "has_push_token": bool(token_row.get("fcm_token")),
                 "last_seen": token_row.get("updated_at"),
                 "transaction_count": int(tx_row.get("transaction_count") or 0),

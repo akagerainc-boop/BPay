@@ -33,6 +33,18 @@ class ItecError(Exception):
     pass
 
 
+def _local_format(phone):
+    """ITEC's own docs example a phone as "0798760888" — the local form —
+    while every caller here builds MSISDN ("250798760888") for MTN/Airtel's
+    own Collections APIs. Forwarding MSISDN to ITEC unchanged is why every
+    request here was failing with a generic "Payment request failed" -
+    converting back to local form before it's sent is the actual fix."""
+    digits = "".join(ch for ch in str(phone) if ch.isdigit())
+    if digits.startswith("250") and len(digits) == 12:
+        return "0" + digits[3:]
+    return digits
+
+
 def request_to_pay(config, *, phone, amount, external_id, message):
     """Starts a Request Payment. Returns the reference to track — ITEC has
     no reference of its own to hand back beyond the `req_ref` we send, so
@@ -46,7 +58,7 @@ def request_to_pay(config, *, phone, amount, external_id, message):
         f"{BASE_URL}/api2/pay",
         json={
             "amount": amount,
-            "phone": phone,
+            "phone": _local_format(phone),
             "key": key,
             "req_ref": external_id,
             "note": message,

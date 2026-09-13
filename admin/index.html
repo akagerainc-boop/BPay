@@ -44,6 +44,7 @@
       <button class="tab" data-tab="fees">Fees &amp; API keys</button>
       <button class="tab" data-tab="payment-links">Payment links</button>
       <button class="tab" data-tab="announcements">Announcements</button>
+      <button class="tab" data-tab="app-update">App update</button>
       <button class="tab" data-tab="users">Users</button>
       <button class="tab" data-tab="transactions">Transactions</button>
     </nav>
@@ -335,6 +336,46 @@
       </div>
     </section>
 
+    <!-- ------------------------------------------------------ app update -->
+    <section id="tab-app-update" class="tab-panel" hidden>
+      <div class="panel-head">
+        <h2>Push an update to users</h2>
+      </div>
+      <p class="muted note">
+        Any device reporting a lower version code than the one below is
+        blocked in-app behind a mandatory popup until it updates — there is
+        no dismiss button. Use this only when a release actually needs
+        every user on it.
+      </p>
+      <div class="card">
+        <label>Required version code
+          <input type="number" id="upd-version-code" placeholder="e.g. 5 (must match the Play Store release's version code)">
+        </label>
+        <label>Version name (optional, shown in history only)
+          <input type="text" id="upd-version-name" placeholder="e.g. 1.0.3">
+        </label>
+        <label>Message shown to users
+          <textarea id="upd-message" rows="2">Update the app to enjoy new features.</textarea>
+        </label>
+        <label>Play Store link
+          <input type="text" id="upd-play-store-url" placeholder="https://play.google.com/store/apps/details?id=com.akagerainc.bpay">
+        </label>
+        <button class="btn primary" id="upd-push">Update app for users</button>
+      </div>
+
+      <div class="panel-head" style="margin-top:28px">
+        <h2>History</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="app-updates-table">
+          <thead>
+            <tr><th>When</th><th>Version code</th><th>Version name</th><th>Message</th><th>Play Store link</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ------------------------------------------------------- users -->
     <section id="tab-users" class="tab-panel" hidden>
       <div class="panel-head">
@@ -352,6 +393,7 @@
           <thead>
             <tr>
               <th>Device</th><th>Phone</th><th>Network</th><th>Push</th>
+              <th>App version</th>
               <th>Transactions</th><th>Successful</th><th>Failed</th>
               <th>Volume</th><th>Last active</th>
             </tr>
