@@ -1725,6 +1725,9 @@ def admin_stats():
 
 
 @app.get("/api/health")
+# Short alias for the UptimeRobot monitor that pings every few minutes to
+# keep the Render free instance from sleeping.
+@app.get("/health")
 def health():
     try:
         db.query_one("SELECT 1 AS ok")
